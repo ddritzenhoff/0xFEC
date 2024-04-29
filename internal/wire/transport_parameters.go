@@ -47,6 +47,11 @@ const (
 	retrySourceConnectionIDParameterID         transportParameterID = 0x10
 	// RFC 9221
 	maxDatagramFrameSizeParameterID transportParameterID = 0x20
+
+	// TODO (ddritzenhoff) may have to sync with Michel for fecEnableParameterID.
+	fecEnableParameterID              transportParameterID = 0x238ffece01
+	fecDecoderSchemeParameterID       transportParameterID = 0x238ffecd
+	fecInitialCodingWindowParameterID transportParameterID = 0x238ffecc
 )
 
 // PreferredAddress is the value encoding in the preferred_address transport parameter
@@ -85,6 +90,12 @@ type TransportParameters struct {
 	ActiveConnectionIDLimit uint64
 
 	MaxDatagramFrameSize protocol.ByteCount
+
+	// TODO (ddritzenhoff) Not sure if uint8 is the best option here.
+	EnableFEC        uint8
+	DecoderFECScheme protocol.FECSchemeID
+	// TODO (ddritzenhoff) not exactly sure what the type should be here.
+	InitialCodingWindow uint16
 }
 
 // Unmarshal the transport parameters
@@ -140,7 +151,10 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 			initialMaxStreamsUniParameterID,
 			maxAckDelayParameterID,
 			maxDatagramFrameSizeParameterID,
-			ackDelayExponentParameterID:
+			ackDelayExponentParameterID,
+			fecEnableParameterID,
+			fecDecoderSchemeParameterID,
+			fecInitialCodingWindowParameterID:
 			if err := p.readNumericTransportParameter(r, paramID, int(paramLen)); err != nil {
 				return err
 			}
@@ -312,6 +326,15 @@ func (p *TransportParameters) readNumericTransportParameter(
 		p.ActiveConnectionIDLimit = val
 	case maxDatagramFrameSizeParameterID:
 		p.MaxDatagramFrameSize = protocol.ByteCount(val)
+	case fecEnableParameterID:
+		if val != 0 && val != 1 {
+			return fmt.Errorf("invalid value for enable_fec: %d (only 0x0 or 0x1 supported)", val)
+		}
+		p.EnableFEC = uint8(val)
+	case fecDecoderSchemeParameterID:
+		p.DecoderFECScheme = protocol.FECSchemeID(val)
+	case fecInitialCodingWindowParameterID:
+		p.InitialCodingWindow = uint16(val)
 	default:
 		return fmt.Errorf("TransportParameter BUG: transport parameter %d not found", paramID)
 	}
@@ -349,6 +372,12 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	b = p.marshalVarintParam(b, maxIdleTimeoutParameterID, uint64(p.MaxIdleTimeout/time.Millisecond))
 	// max_packet_size
 	b = p.marshalVarintParam(b, maxUDPPayloadSizeParameterID, uint64(protocol.MaxPacketBufferSize))
+	// enable_fec
+	b = p.marshalVarintParam(b, fecEnableParameterID, uint64(p.EnableFEC))
+	// decoder_fec_scheme
+	b = p.marshalVarintParam(b, fecDecoderSchemeParameterID, uint64(p.DecoderFECScheme))
+	// initial_coding_window
+	b = p.marshalVarintParam(b, fecInitialCodingWindowParameterID, uint64(p.InitialCodingWindow))
 	// max_ack_delay
 	// Only send it if is different from the default value.
 	if p.MaxAckDelay != protocol.DefaultMaxAckDelay {
@@ -505,8 +534,8 @@ func (p *TransportParameters) String() string {
 		logString += "RetrySourceConnectionID: %s, "
 		logParams = append(logParams, p.RetrySourceConnectionID)
 	}
-	logString += "InitialMaxStreamDataBidiLocal: %d, InitialMaxStreamDataBidiRemote: %d, InitialMaxStreamDataUni: %d, InitialMaxData: %d, MaxBidiStreamNum: %d, MaxUniStreamNum: %d, MaxIdleTimeout: %s, AckDelayExponent: %d, MaxAckDelay: %s, ActiveConnectionIDLimit: %d"
-	logParams = append(logParams, []interface{}{p.InitialMaxStreamDataBidiLocal, p.InitialMaxStreamDataBidiRemote, p.InitialMaxStreamDataUni, p.InitialMaxData, p.MaxBidiStreamNum, p.MaxUniStreamNum, p.MaxIdleTimeout, p.AckDelayExponent, p.MaxAckDelay, p.ActiveConnectionIDLimit}...)
+	logString += "InitialMaxStreamDataBidiLocal: %d, InitialMaxStreamDataBidiRemote: %d, InitialMaxStreamDataUni: %d, InitialMaxData: %d, MaxBidiStreamNum: %d, MaxUniStreamNum: %d, MaxIdleTimeout: %s, AckDelayExponent: %d, MaxAckDelay: %s, ActiveConnectionIDLimit: %d, EnableFEC: %d, DecoderFECScheme: %s, InitialCodingWindow: %d"
+	logParams = append(logParams, []interface{}{p.InitialMaxStreamDataBidiLocal, p.InitialMaxStreamDataBidiRemote, p.InitialMaxStreamDataUni, p.InitialMaxData, p.MaxBidiStreamNum, p.MaxUniStreamNum, p.MaxIdleTimeout, p.AckDelayExponent, p.MaxAckDelay, p.ActiveConnectionIDLimit, p.EnableFEC, p.DecoderFECScheme.String(), p.InitialCodingWindow}...)
 	if p.StatelessResetToken != nil { // the client never sends a stateless reset token
 		logString += ", StatelessResetToken: %#x"
 		logParams = append(logParams, *p.StatelessResetToken)
