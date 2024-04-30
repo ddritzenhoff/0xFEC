@@ -34,6 +34,12 @@ const (
 	connectionCloseFrameType    = 0x1c
 	applicationCloseFrameType   = 0x1d
 	handshakeDoneFrameType      = 0x1e
+
+	repairFrameType       = 0x32a80fec
+	sourceSymbolFrameType = 0x32a80fec55
+	// TODO (ddritzenhoff) skipping SID as it'll probably be deprecated in a later draft.
+	symbolACKFrameType = 0x32a80fecac
+	FECWindowFrameType = 0x32a80fecc0
 )
 
 // The FrameParser parses QUIC frames, one by one.
@@ -46,6 +52,11 @@ type FrameParser struct {
 	// To avoid allocating when parsing, keep a single ACK frame struct.
 	// It is used over and over again.
 	ackFrame *AckFrame
+
+	// To avoid allocating when parsing, keep a single symbol ACK frame struct.
+	// It is used over and over again.
+	// TODO (ddritzenhoff) this may not be necessary. The FrameParser struct is only called once during connection establishment, so I don't think it'll add that much overhead. That being said, I'm open to removing this, especially if the frequency of SymbolAck frames is low.
+	symbolAckFrame *SymbolAckFrame
 }
 
 // NewFrameParser creates a new frame parser.
@@ -143,6 +154,16 @@ func (p *FrameParser) parseFrame(r *bytes.Reader, typ uint64, encLevel protocol.
 			frame, err = parseConnectionCloseFrame(r, typ, v)
 		case handshakeDoneFrameType:
 			frame = &HandshakeDoneFrame{}
+		case repairFrameType:
+			frame, err = parseRepairFrame(r, v)
+		case sourceSymbolFrameType:
+			frame, err = parseSourceSymbolFrame(r, v)
+		case symbolACKFrameType:
+			p.symbolAckFrame.Reset()
+			err = parseSymbolAckFrame(p.symbolAckFrame, r, v)
+			frame = p.symbolAckFrame
+		case FECWindowFrameType:
+			frame, err = parseFECWindowFrame(r, v)
 		case 0x30, 0x31:
 			if p.supportsDatagrams {
 				frame, err = parseDatagramFrame(r, typ, v)
