@@ -11,6 +11,8 @@ You basically have to extract the frames and then send them back to frame_parser
 */
 
 type SourceSymbolFrame struct {
+	SID     protocol.SID
+	Payload []byte
 }
 
 // TODO (ddritzenhoff) finish implementing.

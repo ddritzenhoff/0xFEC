@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go/internal/ackhandler"
+	"github.com/quic-go/quic-go/internal/fec"
 	"github.com/quic-go/quic-go/internal/flowcontrol"
 	"github.com/quic-go/quic-go/internal/handshake"
 	"github.com/quic-go/quic-go/internal/logutils"
@@ -211,6 +212,8 @@ type connection struct {
 	logID  string
 	tracer *logging.ConnectionTracer
 	logger utils.Logger
+
+	fec fec.Manager
 }
 
 var (
@@ -306,6 +309,9 @@ var newConnection = func(
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
 		RetrySourceConnectionID:   retrySrcConnID,
+		EnableFEC:                 0x1,
+		// TODO (ddritzenhoff) you'll have to make a flag out of this after adding Reed-Solomon.
+		DecoderFECScheme: protocol.XORFECScheme,
 	}
 	if s.config.EnableDatagrams {
 		params.MaxDatagramFrameSize = wire.MaxDatagramSize
@@ -413,6 +419,10 @@ var newClientConnection = func(
 		// See https://github.com/quic-go/quic-go/pull/3806.
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
+		EnableFEC:                 0x1,
+		// TODO (ddritzenhoff) you'll have to make a flag out of this after adding Reed-Solomon.
+		DecoderFECScheme: protocol.XORFECScheme,
+		// TODO (ddritzenhoff) I'm quite sure the client doesn't send the InitialCodingWindow. This is something that it gets from the server.
 	}
 	if s.config.EnableDatagrams {
 		params.MaxDatagramFrameSize = wire.MaxDatagramSize
@@ -507,6 +517,7 @@ func (s *connection) run() error {
 	if err := s.handleHandshakeEvents(); err != nil {
 		return err
 	}
+	// TODO (ddritzenhoff) it could be that I actually create the FEC here as I'm dependent on the transport parameters.
 	go func() {
 		if err := s.sendQueue.Run(); err != nil {
 			s.destroyImpl(err)
@@ -1268,12 +1279,45 @@ func (s *connection) handleFrames(
 		if handleErr != nil {
 			continue
 		}
-		if err := s.handleFrame(frame, encLevel, destConnID); err != nil {
-			if log == nil {
-				return false, err
+		switch f := frame.(type) {
+		case *wire.SourceSymbolFrame:
+			blockData, err := s.handleSourceSymbolFrame(f)
+			if err != nil {
+				if log == nil {
+					return false, err
+				}
+				// If we're logging, we need to keep parsing (but not handling) all frames.
+				handleErr = err
 			}
-			// If we're logging, we need to keep parsing (but not handling) all frames.
-			handleErr = err
+			for len(blockData) > 0 {
+				l, frame, err := s.frameParser.ParseNext(blockData, encLevel, s.version)
+				if err != nil {
+					return false, err
+				}
+				blockData = blockData[l:]
+				if frame == nil {
+					break
+				}
+				if ackhandler.IsFrameAckEliciting(frame) {
+					isAckEliciting = true
+				}
+				if log != nil {
+					frames = append(frames, logutils.ConvertFrame(frame))
+				}
+				// An error occurred handling a previous frame.
+				// Don't handle the current frame.
+				if handleErr != nil {
+					continue
+				}
+			}
+		default:
+			if err := s.handleFrame(frame, encLevel, destConnID); err != nil {
+				if log == nil {
+					return false, err
+				}
+				// If we're logging, we need to keep parsing (but not handling) all frames.
+				handleErr = err
+			}
 		}
 	}
 
@@ -1338,6 +1382,8 @@ func (s *connection) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel
 		err = s.handleHandshakeDoneFrame()
 	case *wire.DatagramFrame:
 		err = s.handleDatagramFrame(frame)
+	case *wire.FECWindowFrame:
+		err = s.handleFECWindowFrame(frame)
 	default:
 		err = fmt.Errorf("unexpected frame type: %s", reflect.ValueOf(&frame).Elem().Type().Name())
 	}
@@ -1539,6 +1585,18 @@ func (s *connection) handleDatagramFrame(f *wire.DatagramFrame) error {
 	}
 	s.datagramQueue.HandleDatagramFrame(f)
 	return nil
+}
+
+func (s *connection) handleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error) {
+	_, blockData, err := s.fec.HandleSourceSymbolFrame(f)
+	if err != nil {
+		return nil, err
+	}
+	return blockData, nil
+}
+
+func (s *connection) handleFECWindowFrame(f *wire.FECWindowFrame) error {
+	return s.fec.UpdateWindowSize(f.Size, f.Epoch)
 }
 
 // closeLocal closes the connection and send a CONNECTION_CLOSE containing the error
@@ -1765,6 +1823,8 @@ func (s *connection) applyTransportParameters() {
 	s.connFlowController.UpdateSendWindow(params.InitialMaxData)
 	s.rttStats.SetMaxAckDelay(params.MaxAckDelay)
 	s.connIDGenerator.SetMaxActiveConnIDs(params.ActiveConnectionIDLimit)
+	// TODO (ddritzenhoff) I believe this is where you have to set the transport parameters.
+	// s.fec = s.fec.SetParams(params.EnableFEC, params.DecoderFECScheme, params.InitialCodingWindow)
 	if params.StatelessResetToken != nil {
 		s.connIDManager.SetStatelessResetToken(*params.StatelessResetToken)
 	}
