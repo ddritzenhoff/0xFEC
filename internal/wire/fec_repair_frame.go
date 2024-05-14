@@ -2,8 +2,10 @@ package wire
 
 import (
 	"bytes"
+	"io"
 
 	"github.com/quic-go/quic-go/internal/protocol"
+	"github.com/quic-go/quic-go/quicvarint"
 )
 
 type RepairFrame struct {
@@ -26,16 +28,45 @@ func NewRepairFrame(RID protocol.RID, BlockID protocol.BlockID, Data []byte) *Re
 	}
 }
 
-// TODO (ddritzenhoff) finish implementing.
-func parseRepairFrame(_ *bytes.Reader, _ protocol.Version) (*RepairFrame, error) {
-	return nil, nil
+func parseRepairFrame(r *bytes.Reader, _ protocol.Version) (*RepairFrame, error) {
+	frame := &RepairFrame{}
+	rid, err := quicvarint.Read(r)
+	if err != nil {
+		return nil, err
+	}
+	frame.RID = protocol.RID(rid)
+	blockID, err := quicvarint.Read(r)
+	if err != nil {
+		return nil, err
+	}
+	frame.BlockID = protocol.BlockID(blockID)
+	dataLen, err := quicvarint.Read(r)
+	if err != nil {
+		return nil, err
+	}
+	if dataLen > uint64(r.Len()) {
+		return nil, io.EOF
+	}
+	if dataLen != 0 {
+		frame.Data = make([]byte, dataLen)
+		if _, err := io.ReadFull(r, frame.Data); err != nil {
+			// this should never happen, since we already checked the dataLen earlier.
+			return nil, err
+		}
+	}
+	return frame, nil
 }
 
 func (f *RepairFrame) Append(b []byte, _ protocol.Version) ([]byte, error) {
-	return nil, nil
+	b = quicvarint.Append(b, uint64(repairFrameType))
+	b = quicvarint.Append(b, uint64(f.RID))
+	b = quicvarint.Append(b, uint64(f.BlockID))
+	b = quicvarint.Append(b, uint64(len(f.Data)))
+	b = append(b, f.Data...)
+	return b, nil
 }
 
 // Length of a written frame
 func (f *RepairFrame) Length(_ protocol.Version) protocol.ByteCount {
-	return 0
+	return quicvarint.Len(uint64(repairFrameType)) + quicvarint.Len(uint64(f.RID)) + quicvarint.Len(uint64(f.BlockID)) + quicvarint.Len(uint64(len(f.Data))) + protocol.ByteCount(len(f.Data))
 }

@@ -110,6 +110,7 @@ func populateConfig(config *Config) *Config {
 		MaxIncomingUniStreams:          maxIncomingUniStreams,
 		TokenStore:                     config.TokenStore,
 		EnableDatagrams:                config.EnableDatagrams,
+		EnableFEC:                      config.EnableFEC,
 		DisablePathMTUDiscovery:        config.DisablePathMTUDiscovery,
 		Allow0RTT:                      config.Allow0RTT,
 		Tracer:                         config.Tracer,

@@ -157,7 +157,7 @@ func (p *FrameParser) parseFrame(r *bytes.Reader, typ uint64, encLevel protocol.
 		case repairFrameType:
 			frame, err = parseRepairFrame(r, v)
 		case sourceSymbolFrameType:
-			frame, err = parseSourceSymbolFrame(r, v)
+			frame, err = ParseSourceSymbolFrame(r, v)
 		case symbolACKFrameType:
 			p.symbolAckFrame.Reset()
 			err = parseSymbolAckFrame(p.symbolAckFrame, r, v)

@@ -309,7 +309,6 @@ var newConnection = func(
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
 		RetrySourceConnectionID:   retrySrcConnID,
-		EnableFEC:                 0x1,
 		// TODO (ddritzenhoff) you'll have to make a flag out of this after adding Reed-Solomon.
 		DecoderFECScheme: protocol.XORFECScheme,
 	}
@@ -317,6 +316,11 @@ var newConnection = func(
 		params.MaxDatagramFrameSize = wire.MaxDatagramSize
 	} else {
 		params.MaxDatagramFrameSize = protocol.InvalidByteCount
+	}
+	if s.config.EnableFEC {
+		params.EnableFEC = 0x1
+	} else {
+		params.EnableFEC = 0x0
 	}
 	if s.tracer != nil && s.tracer.SentTransportParameters != nil {
 		s.tracer.SentTransportParameters(params)
@@ -419,7 +423,6 @@ var newClientConnection = func(
 		// See https://github.com/quic-go/quic-go/pull/3806.
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
-		EnableFEC:                 0x1,
 		// TODO (ddritzenhoff) you'll have to make a flag out of this after adding Reed-Solomon.
 		DecoderFECScheme: protocol.XORFECScheme,
 		// TODO (ddritzenhoff) I'm quite sure the client doesn't send the InitialCodingWindow. This is something that it gets from the server.
@@ -428,6 +431,11 @@ var newClientConnection = func(
 		params.MaxDatagramFrameSize = wire.MaxDatagramSize
 	} else {
 		params.MaxDatagramFrameSize = protocol.InvalidByteCount
+	}
+	if s.config.EnableFEC {
+		params.EnableFEC = 0x1
+	} else {
+		params.EnableFEC = 0x0
 	}
 	if s.tracer != nil && s.tracer.SentTransportParameters != nil {
 		s.tracer.SentTransportParameters(params)
@@ -682,6 +690,11 @@ func (s *connection) Context() context.Context {
 
 func (s *connection) supportsDatagrams() bool {
 	return s.peerParams.MaxDatagramFrameSize > 0
+}
+
+func (s *connection) supportsFEC() bool {
+	// TODO (ddritzenhoff) not sure if this is the best way of doign this. Definitely take another look.
+	return s.peerParams.EnableFEC == 0x1 && s.config.EnableFEC
 }
 
 func (s *connection) ConnectionState() ConnectionState {
@@ -1746,6 +1759,7 @@ func (s *connection) restoreTransportParameters(params *wire.TransportParameters
 	s.streamsMap.UpdateLimits(params)
 	s.connStateMutex.Lock()
 	s.connState.SupportsDatagrams = s.supportsDatagrams()
+	s.connState.SupportsFEC = s.supportsFEC()
 	s.connStateMutex.Unlock()
 }
 
@@ -1779,6 +1793,7 @@ func (s *connection) handleTransportParameters(params *wire.TransportParameters)
 
 	s.connStateMutex.Lock()
 	s.connState.SupportsDatagrams = s.supportsDatagrams()
+	s.connState.SupportsFEC = s.supportsFEC()
 	s.connStateMutex.Unlock()
 	return nil
 }
@@ -1825,6 +1840,8 @@ func (s *connection) applyTransportParameters() {
 	s.connIDGenerator.SetMaxActiveConnIDs(params.ActiveConnectionIDLimit)
 	// TODO (ddritzenhoff) I believe this is where you have to set the transport parameters.
 	// s.fec = s.fec.SetParams(params.EnableFEC, params.DecoderFECScheme, params.InitialCodingWindow)
+	// TODO (ddritzenhoff) I'm not sure if I should wrap this in something like if persective.Server.
+	s.fec.SetInitialCodingWindow(params.InitialCodingWindow)
 	if params.StatelessResetToken != nil {
 		s.connIDManager.SetStatelessResetToken(*params.StatelessResetToken)
 	}

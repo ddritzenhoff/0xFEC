@@ -14,6 +14,7 @@ type Manager interface {
 	// HandleSymbolAckFrame()
 	// HandleFECWindowFrame()
 	UpdateWindowSize(newSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error
+	SetInitialCodingWindow(ws protocol.FECWindowSize)
 }
 
 type fecScheme struct {
@@ -52,6 +53,10 @@ func (fw *fecWindow) update(newWindowSize protocol.FECWindowSize, epoch protocol
 	return nil
 }
 
+func (fw *fecWindow) setInitialCodingWindow(ws protocol.FECWindowSize) {
+	fw.size = ws
+}
+
 type manager struct {
 	scheme fecScheme
 	window fecWindow
@@ -85,6 +90,10 @@ func (m *manager) HandleSourceSymbolFrame(f *wire.SourceSymbolFrame) (isBlockFul
 // UpdateWindowSize updates the window size, which denotes the maximum number of received source symbols that can be stored at a time.
 func (m *manager) UpdateWindowSize(newWindowSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error {
 	return m.window.update(newWindowSize, epoch)
+}
+
+func (m *manager) SetInitialCodingWindow(ws protocol.FECWindowSize) {
+	m.window.setInitialCodingWindow(ws)
 }
 
 /*

@@ -95,7 +95,7 @@ type TransportParameters struct {
 	EnableFEC        uint8
 	DecoderFECScheme protocol.FECSchemeID
 	// TODO (ddritzenhoff) not exactly sure what the type should be here.
-	InitialCodingWindow uint16
+	InitialCodingWindow protocol.FECWindowSize
 }
 
 // Unmarshal the transport parameters
@@ -152,6 +152,7 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 			maxAckDelayParameterID,
 			maxDatagramFrameSizeParameterID,
 			ackDelayExponentParameterID,
+			// FEC
 			fecEnableParameterID,
 			fecDecoderSchemeParameterID,
 			fecInitialCodingWindowParameterID:
@@ -334,7 +335,7 @@ func (p *TransportParameters) readNumericTransportParameter(
 	case fecDecoderSchemeParameterID:
 		p.DecoderFECScheme = protocol.FECSchemeID(val)
 	case fecInitialCodingWindowParameterID:
-		p.InitialCodingWindow = uint16(val)
+		p.InitialCodingWindow = protocol.FECWindowSize(val)
 	default:
 		return fmt.Errorf("TransportParameter BUG: transport parameter %d not found", paramID)
 	}

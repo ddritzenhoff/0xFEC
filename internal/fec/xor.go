@@ -1,17 +1,15 @@
 package fec
 
 import (
+	"bytes"
 	"fmt"
 
+	"github.com/quic-go/quic-go/internal/protocol"
 	"github.com/quic-go/quic-go/internal/wire"
 )
 
 type XORScheme struct {
 }
-
-/*
-TODO (ddritzenhoff) beware of payload length. That can definitely ruin a couple things.
-*/
 
 func (s *XORScheme) RecoverSymbols(block *Block) error {
 	// if you manage to recover the symbols, the block will be complete. At that point, you would be able to hand over the data to receive API.
@@ -24,7 +22,25 @@ func (s *XORScheme) RecoverSymbols(block *Block) error {
 		return nil
 	}
 
-	// TODO (ddritzenhoff) must finish the implementation. Question must be addressed first.
+	recoveredSymbol := make([]byte, block.biggestSourceLenSoFar)
+	for _, data := range block.ridToRepairData {
+		s.xor(recoveredSymbol, data)
+	}
+	for _, data := range block.sidToSourceData {
+		s.xor(recoveredSymbol, data)
+	}
+
+	// at this point, the symbol should be recovered. We just have to trim the extra zeros that may be hanging at the end.
+	recoveredFrame, err := wire.ParseSourceSymbolFrame(bytes.NewReader(recoveredSymbol), protocol.VersionUnknown)
+	if err != nil {
+		return err
+	}
+
+	data, exists := block.sidToSourceData[recoveredFrame.SID]
+	if exists {
+		return fmt.Errorf("recovered symbol already exists within the block: sid: %d", recoveredFrame.SID)
+	}
+	block.sidToSourceData[recoveredFrame.SID] = data
 	return nil
 }
 
