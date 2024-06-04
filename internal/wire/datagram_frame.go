@@ -18,6 +18,8 @@ var MaxDatagramSize protocol.ByteCount = 16383
 type DatagramFrame struct {
 	DataLenPresent bool
 	Data           []byte
+	// This value is not sent over the wire. Instead, it is used as a flag during the packet_packer process.
+	FECProtected bool
 }
 
 func parseDatagramFrame(r *bytes.Reader, typ uint64, _ protocol.Version) (*DatagramFrame, error) {

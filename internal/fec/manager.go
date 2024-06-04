@@ -3,6 +3,7 @@ package fec
 import (
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/quic-go/quic-go/internal/protocol"
 	"github.com/quic-go/quic-go/internal/wire"
@@ -13,58 +14,42 @@ type Manager interface {
 	HandleSourceSymbolFrame(f *wire.SourceSymbolFrame) (isBlockFull bool, blockData []byte, _ error)
 	// HandleSymbolAckFrame()
 	// HandleFECWindowFrame()
+	NextSID() protocol.SID
 	UpdateWindowSize(newSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error
 	SetInitialCodingWindow(ws protocol.FECWindowSize)
 }
 
-type fecScheme struct {
-	// n denotes the total number of symbols, including repair symbols, for the block
-	n uint8
-	// k denotes the total number of source symbols in the block
-	k uint8
-	// (n-k) will then provide you with the number of repair symbols within the scheme (e.g. (3, 2) denotes 2 source symbols and (3-2) repair symbols for a total of 3 symbols in the block)
-}
-
-type fecWindow struct {
-	size       protocol.FECWindowSize
-	epoch      protocol.FECWindowEpoch
-	hasBeenSet bool
-}
-
-func newFECWindow() *fecWindow {
-	return &fecWindow{
-		size:       0,
-		epoch:      0,
-		hasBeenSet: false,
-	}
-}
-
-func (fw *fecWindow) update(newWindowSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error {
-	if epoch == 0 && fw.epoch == 0 && fw.hasBeenSet == false {
-		fw.size = newWindowSize
-		fw.hasBeenSet = true
-	} else if epoch > fw.epoch {
-		fw.epoch = epoch
-		fw.size = newWindowSize
-	} else {
-		// TODO (ddritzenhoff) it could be that we should just ignore invalid FEC_WINDOW updates. This is ambiguous within the spec, but it could definitely be something to ask about.
-		return fmt.Errorf("invalid fec window update: newWindowSize %d, newEpoch %d, windowSize: %d, epoch %d", newWindowSize, epoch, fw.size, fw.epoch)
-	}
-	return nil
-}
-
-func (fw *fecWindow) setInitialCodingWindow(ws protocol.FECWindowSize) {
-	fw.size = ws
-}
-
 type manager struct {
-	scheme fecScheme
-	window fecWindow
-	blocks map[protocol.BlockID]*Block
+	nextSIDMutex sync.Mutex
+	nextSID      protocol.SID
+	scheme       fecScheme
+	window       fecWindow
+	blocks       map[protocol.BlockID]*Block
+}
+
+func NewFECManager() *manager {
+	return &manager{
+		// TODO (ddritzenhoff) Change the FEC scheme to be dynamic.
+		scheme: fecScheme{
+			n: 3,
+			k: 2,
+		},
+		window:  *newFECWindow(),
+		blocks:  make(map[protocol.BlockID]*Block),
+		nextSID: 0,
+	}
+}
+
+func (m *manager) NextSID() protocol.SID {
+	m.nextSIDMutex.Lock()
+	ret := m.nextSID
+	m.nextSID++
+	m.nextSIDMutex.Unlock()
+	return ret
 }
 
 func (m *manager) sidToBlockID(sid protocol.SID) protocol.BlockID {
-	return protocol.BlockID(uint32(sid) / uint32(m.scheme.k))
+	return protocol.BlockID(uint64(sid) / uint64(m.scheme.k))
 }
 
 // TODO (ddritzenhoff) need to add in FEC_WINDOW logic. Right now, I would store every single symbol.
@@ -94,6 +79,46 @@ func (m *manager) UpdateWindowSize(newWindowSize protocol.FECWindowSize, epoch p
 
 func (m *manager) SetInitialCodingWindow(ws protocol.FECWindowSize) {
 	m.window.setInitialCodingWindow(ws)
+}
+
+type fecScheme struct {
+	// n denotes the total number of symbols, including repair symbols, for the block
+	n uint8
+	// k denotes the total number of source symbols in the block
+	k uint8
+	// (n-k) will then provide you with the number of repair symbols within the scheme (e.g. (3, 2) denotes 2 source symbols and (3-2) repair symbols for a total of 3 symbols in the block)
+}
+
+type fecWindow struct {
+	size       protocol.FECWindowSize
+	epoch      protocol.FECWindowEpoch
+	hasBeenSet bool
+}
+
+func newFECWindow() *fecWindow {
+	return &fecWindow{
+		size:       0,
+		epoch:      0,
+		hasBeenSet: false,
+	}
+}
+
+func (fw *fecWindow) update(newWindowSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error {
+	if epoch == 0 && fw.epoch == 0 && !fw.hasBeenSet {
+		fw.size = newWindowSize
+		fw.hasBeenSet = true
+	} else if epoch > fw.epoch {
+		fw.epoch = epoch
+		fw.size = newWindowSize
+	} else {
+		// TODO (ddritzenhoff) it could be that we should just ignore invalid FEC_WINDOW updates. This is ambiguous within the spec, but it could definitely be something to ask about.
+		return fmt.Errorf("invalid fec window update: newWindowSize %d, newEpoch %d, windowSize: %d, epoch %d", newWindowSize, epoch, fw.size, fw.epoch)
+	}
+	return nil
+}
+
+func (fw *fecWindow) setInitialCodingWindow(ws protocol.FECWindowSize) {
+	fw.size = ws
 }
 
 /*

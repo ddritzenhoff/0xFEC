@@ -18,6 +18,9 @@ type StreamFrame struct {
 	DataLenPresent bool
 
 	fromPool bool
+
+	// This value is not sent over the wire. Instead, it is used as a flag during the packet_packer process.
+	FECProtected bool
 }
 
 func parseStreamFrame(r *bytes.Reader, typ uint64, _ protocol.Version) (*StreamFrame, error) {

@@ -24,6 +24,16 @@ type MockQUICConn struct {
 	recorder *MockQUICConnMockRecorder
 }
 
+// OpenUniStreamSyncWithFEC implements quicConn.
+func (m *MockQUICConn) OpenUniStreamSyncWithFEC(context.Context) (SendStream, error) {
+	panic("unimplemented")
+}
+
+// SendDatagramWithFEC implements quicConn.
+func (m *MockQUICConn) SendDatagramWithFEC(payload []byte) error {
+	panic("unimplemented")
+}
+
 // MockQUICConnMockRecorder is the mock recorder for MockQUICConn.
 type MockQUICConnMockRecorder struct {
 	mock *MockQUICConn

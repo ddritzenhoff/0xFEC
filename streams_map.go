@@ -84,9 +84,9 @@ func newStreamsMap(
 func (m *streamsMap) initMaps() {
 	m.outgoingBidiStreams = newOutgoingStreamsMap(
 		protocol.StreamTypeBidi,
-		func(num protocol.StreamNum) streamI {
+		func(num protocol.StreamNum, fecProtected bool) streamI {
 			id := num.StreamID(protocol.StreamTypeBidi, m.perspective)
-			return newStream(id, m.sender, m.newFlowController(id))
+			return newStreamWithFEC(id, m.sender, m.newFlowController(id), fecProtected)
 		},
 		m.sender.queueControlFrame,
 	)
@@ -101,9 +101,9 @@ func (m *streamsMap) initMaps() {
 	)
 	m.outgoingUniStreams = newOutgoingStreamsMap(
 		protocol.StreamTypeUni,
-		func(num protocol.StreamNum) sendStreamI {
+		func(num protocol.StreamNum, fecProtected bool) sendStreamI {
 			id := num.StreamID(protocol.StreamTypeUni, m.perspective)
-			return newSendStream(id, m.sender, m.newFlowController(id))
+			return newSendStreamWithFEC(id, m.sender, m.newFlowController(id), fecProtected)
 		},
 		m.sender.queueControlFrame,
 	)
@@ -163,6 +163,18 @@ func (m *streamsMap) OpenUniStreamSync(ctx context.Context) (SendStream, error) 
 		return nil, Err0RTTRejected
 	}
 	str, err := mm.OpenStreamSync(ctx)
+	return str, convertStreamError(err, protocol.StreamTypeUni, m.perspective)
+}
+
+func (m *streamsMap) OpenUniStreamSyncWithFEC(ctx context.Context) (SendStream, error) {
+	m.mutex.Lock()
+	reset := m.reset
+	mm := m.outgoingUniStreams
+	m.mutex.Unlock()
+	if reset {
+		return nil, Err0RTTRejected
+	}
+	str, err := mm.OpenStreamSyncWithFEC(ctx)
 	return str, convertStreamError(err, protocol.StreamTypeUni, m.perspective)
 }
 

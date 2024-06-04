@@ -21,7 +21,7 @@ import (
 var _ = Describe("Streams Map (outgoing)", func() {
 	var (
 		m          *outgoingStreamsMap[*mockGenericStream]
-		newStr     func(num protocol.StreamNum) *mockGenericStream
+		newStr     func(num protocol.StreamNum, fecProtected bool) *mockGenericStream
 		mockSender *MockStreamSender
 	)
 
@@ -37,7 +37,7 @@ var _ = Describe("Streams Map (outgoing)", func() {
 	}
 
 	BeforeEach(func() {
-		newStr = func(num protocol.StreamNum) *mockGenericStream {
+		newStr = func(num protocol.StreamNum, fecProtected bool) *mockGenericStream {
 			return &mockGenericStream{num: num}
 		}
 		mockSender = NewMockStreamSender(mockCtrl)

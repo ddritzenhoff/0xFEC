@@ -113,6 +113,35 @@ func newStream(streamID protocol.StreamID,
 	return s
 }
 
+// newStreamWithFEC creates a new Stream with the ability to enable FEC
+func newStreamWithFEC(streamID protocol.StreamID,
+	sender streamSender,
+	flowController flowcontrol.StreamFlowController,
+	fecProtected bool) *stream {
+	s := &stream{sender: sender}
+	senderForSendStream := &uniStreamSender{
+		streamSender: sender,
+		onStreamCompletedImpl: func() {
+			s.completedMutex.Lock()
+			s.sendStreamCompleted = true
+			s.checkIfCompleted()
+			s.completedMutex.Unlock()
+		},
+	}
+	s.sendStream = *newSendStreamWithFEC(streamID, senderForSendStream, flowController, fecProtected)
+	senderForReceiveStream := &uniStreamSender{
+		streamSender: sender,
+		onStreamCompletedImpl: func() {
+			s.completedMutex.Lock()
+			s.receiveStreamCompleted = true
+			s.checkIfCompleted()
+			s.completedMutex.Unlock()
+		},
+	}
+	s.receiveStream = *newReceiveStream(streamID, senderForReceiveStream, flowController)
+	return s
+}
+
 // need to define StreamID() here, since both receiveStream and readStream have a StreamID()
 func (s *stream) StreamID() protocol.StreamID {
 	// the result is same for receiveStream and sendStream

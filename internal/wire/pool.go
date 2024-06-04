@@ -19,6 +19,8 @@ func init() {
 
 func GetStreamFrame() *StreamFrame {
 	f := pool.Get().(*StreamFrame)
+	// This ensures a stream frame will never be retrieved in which FECProtected is set to true.
+	f.FECProtected = false
 	return f
 }
 

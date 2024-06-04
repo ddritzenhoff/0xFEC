@@ -463,6 +463,45 @@ func (c *MockStreamManagerOpenUniStreamSyncCall) DoAndReturn(f func(context.Cont
 	return c
 }
 
+// OpenUniStreamSyncWithFEC mocks base method.
+func (m *MockStreamManager) OpenUniStreamSyncWithFEC(arg0 context.Context) (SendStream, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OpenUniStreamSyncWithFEC", arg0)
+	ret0, _ := ret[0].(SendStream)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// OpenUniStreamSyncWithFEC indicates an expected call of OpenUniStreamSyncWithFEC.
+func (mr *MockStreamManagerMockRecorder) OpenUniStreamSyncWithFEC(arg0 any) *MockStreamManagerOpenUniStreamSyncWithFECCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenUniStreamSyncWithFEC", reflect.TypeOf((*MockStreamManager)(nil).OpenUniStreamSyncWithFEC), arg0)
+	return &MockStreamManagerOpenUniStreamSyncWithFECCall{Call: call}
+}
+
+// MockStreamManagerOpenUniStreamSyncWithFECCall wrap *gomock.Call
+type MockStreamManagerOpenUniStreamSyncWithFECCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockStreamManagerOpenUniStreamSyncWithFECCall) Return(arg0 SendStream, arg1 error) *MockStreamManagerOpenUniStreamSyncWithFECCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockStreamManagerOpenUniStreamSyncWithFECCall) Do(f func(context.Context) (SendStream, error)) *MockStreamManagerOpenUniStreamSyncWithFECCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockStreamManagerOpenUniStreamSyncWithFECCall) DoAndReturn(f func(context.Context) (SendStream, error)) *MockStreamManagerOpenUniStreamSyncWithFECCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // ResetFor0RTT mocks base method.
 func (m *MockStreamManager) ResetFor0RTT() {
 	m.ctrl.T.Helper()

@@ -52,6 +52,8 @@ type sendStream struct {
 	deadline  time.Time
 
 	flowController flowcontrol.StreamFlowController
+
+	fecProtected bool
 }
 
 var (
@@ -70,6 +72,25 @@ func newSendStream(
 		flowController: flowController,
 		writeChan:      make(chan struct{}, 1),
 		writeOnce:      make(chan struct{}, 1), // cap: 1, to protect against concurrent use of Write
+		fecProtected:   false,
+	}
+	s.ctx, s.ctxCancel = context.WithCancelCause(context.Background())
+	return s
+}
+
+func newSendStreamWithFEC(
+	streamID protocol.StreamID,
+	sender streamSender,
+	flowController flowcontrol.StreamFlowController,
+	fecProtected bool,
+) *sendStream {
+	s := &sendStream{
+		streamID:       streamID,
+		sender:         sender,
+		flowController: flowController,
+		writeChan:      make(chan struct{}, 1),
+		writeOnce:      make(chan struct{}, 1), // cap: 1, to protect against concurrent use of Write
+		fecProtected:   fecProtected,
 	}
 	s.ctx, s.ctxCancel = context.WithCancelCause(context.Background())
 	return s
@@ -209,6 +230,8 @@ func (s *sendStream) popStreamFrame(maxBytes protocol.ByteCount, v protocol.Vers
 	if f == nil {
 		return ackhandler.StreamFrame{}, false, hasMoreData
 	}
+	// A stream will always be either FEC protected or not at all. Therefore, it's safe to set the `FECProtected` field as all the frames here are a product of this stream.
+	f.FECProtected = s.fecProtected
 	return ackhandler.StreamFrame{
 		Frame:   f,
 		Handler: (*sendStreamAckHandler)(s),

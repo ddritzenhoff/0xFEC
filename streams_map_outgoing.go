@@ -27,7 +27,7 @@ type outgoingStreamsMap[T outgoingStream] struct {
 	maxStream   protocol.StreamNum // the maximum stream ID we're allowed to open
 	blockedSent bool               // was a STREAMS_BLOCKED sent for the current maxStream
 
-	newStream            func(protocol.StreamNum) T
+	newStream            func(protocol.StreamNum, bool /* FEC protected */) T
 	queueStreamIDBlocked func(*wire.StreamsBlockedFrame)
 
 	closeErr error
@@ -35,7 +35,7 @@ type outgoingStreamsMap[T outgoingStream] struct {
 
 func newOutgoingStreamsMap[T outgoingStream](
 	streamType protocol.StreamType,
-	newStream func(protocol.StreamNum) T,
+	newStream func(protocol.StreamNum, bool /* FEC protected */) T,
 	queueControlFrame func(wire.Frame),
 ) *outgoingStreamsMap[T] {
 	return &outgoingStreamsMap[T]{
@@ -49,7 +49,15 @@ func newOutgoingStreamsMap[T outgoingStream](
 	}
 }
 
+func (m *outgoingStreamsMap[T]) OpenStreamWithFEC() (T, error) {
+	return m.openStreamInternal(true)
+}
+
 func (m *outgoingStreamsMap[T]) OpenStream() (T, error) {
+	return m.openStreamInternal(false)
+}
+
+func (m *outgoingStreamsMap[T]) openStreamInternal(fecProtected bool) (T, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -62,10 +70,18 @@ func (m *outgoingStreamsMap[T]) OpenStream() (T, error) {
 		m.maybeSendBlockedFrame()
 		return *new(T), streamOpenErr{errTooManyOpenStreams}
 	}
-	return m.openStream(), nil
+	return m.openStream(fecProtected), nil
+}
+
+func (m *outgoingStreamsMap[T]) OpenStreamSyncWithFEC(ctx context.Context) (T, error) {
+	return m.openStreamSyncInternal(ctx, true)
 }
 
 func (m *outgoingStreamsMap[T]) OpenStreamSync(ctx context.Context) (T, error) {
+	return m.openStreamSyncInternal(ctx, false)
+}
+
+func (m *outgoingStreamsMap[T]) openStreamSyncInternal(ctx context.Context, fecProtected bool) (T, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -78,7 +94,7 @@ func (m *outgoingStreamsMap[T]) OpenStreamSync(ctx context.Context) (T, error) {
 	}
 
 	if len(m.openQueue) == 0 && m.nextStream <= m.maxStream {
-		return m.openStream(), nil
+		return m.openStream(fecProtected), nil
 	}
 
 	waitChan := make(chan struct{}, 1)
@@ -108,7 +124,7 @@ func (m *outgoingStreamsMap[T]) OpenStreamSync(ctx context.Context) (T, error) {
 			// no stream available. Continue waiting
 			continue
 		}
-		str := m.openStream()
+		str := m.openStream(fecProtected)
 		delete(m.openQueue, queuePos)
 		m.lowestInQueue = queuePos + 1
 		m.unblockOpenSync()
@@ -116,8 +132,8 @@ func (m *outgoingStreamsMap[T]) OpenStreamSync(ctx context.Context) (T, error) {
 	}
 }
 
-func (m *outgoingStreamsMap[T]) openStream() T {
-	s := m.newStream(m.nextStream)
+func (m *outgoingStreamsMap[T]) openStream(fecProtected bool) T {
+	s := m.newStream(m.nextStream, fecProtected)
 	m.streams[m.nextStream] = s
 	m.nextStream++
 	return s

@@ -42,6 +42,7 @@ type streamManager interface {
 	OpenUniStream() (SendStream, error)
 	OpenStreamSync(context.Context) (Stream, error)
 	OpenUniStreamSync(context.Context) (SendStream, error)
+	OpenUniStreamSyncWithFEC(context.Context) (SendStream, error)
 	AcceptStream(context.Context) (Stream, error)
 	AcceptUniStream(context.Context) (ReceiveStream, error)
 	DeleteStream(protocol.StreamID) error
@@ -213,7 +214,7 @@ type connection struct {
 	tracer *logging.ConnectionTracer
 	logger utils.Logger
 
-	fec fec.Manager
+	fecManager fec.Manager
 }
 
 var (
@@ -275,6 +276,7 @@ var newConnection = func(
 		s.queueControlFrame,
 		connIDGenerator,
 	)
+	s.fecManager = fec.NewFECManager()
 	s.preSetup()
 	s.ctx, s.ctxCancel = context.WithCancelCause(context.WithValue(context.Background(), ConnectionTracingKey, tracingID))
 	s.sentPacketHandler, s.receivedPacketHandler = ackhandler.NewAckHandler(
@@ -338,7 +340,7 @@ var newConnection = func(
 		s.version,
 	)
 	s.cryptoStreamHandler = cs
-	s.packer = newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective)
+	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.fecManager)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
 	s.cryptoStreamManager = newCryptoStreamManager(cs, s.initialStream, s.handshakeStream, s.oneRTTStream)
 	return s
@@ -391,6 +393,7 @@ var newClientConnection = func(
 		s.queueControlFrame,
 		connIDGenerator,
 	)
+	s.fecManager = fec.NewFECManager()
 	s.preSetup()
 	s.ctx, s.ctxCancel = context.WithCancelCause(context.WithValue(context.Background(), ConnectionTracingKey, tracingID))
 	s.sentPacketHandler, s.receivedPacketHandler = ackhandler.NewAckHandler(
@@ -453,7 +456,7 @@ var newClientConnection = func(
 	s.cryptoStreamHandler = cs
 	s.cryptoStreamManager = newCryptoStreamManager(cs, s.initialStream, s.handshakeStream, oneRTTStream)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
-	s.packer = newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective)
+	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.fecManager)
 	if len(tlsConf.ServerName) > 0 {
 		s.tokenStoreKey = tlsConf.ServerName
 	} else {
@@ -692,7 +695,7 @@ func (s *connection) supportsDatagrams() bool {
 	return s.peerParams.MaxDatagramFrameSize > 0
 }
 
-func (s *connection) supportsFEC() bool {
+func (s *connection) fecEnabled() bool {
 	// TODO (ddritzenhoff) not sure if this is the best way of doign this. Definitely take another look.
 	return s.peerParams.EnableFEC == 0x1 && s.config.EnableFEC
 }
@@ -1601,7 +1604,7 @@ func (s *connection) handleDatagramFrame(f *wire.DatagramFrame) error {
 }
 
 func (s *connection) handleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error) {
-	_, blockData, err := s.fec.HandleSourceSymbolFrame(f)
+	_, blockData, err := s.fecManager.HandleSourceSymbolFrame(f)
 	if err != nil {
 		return nil, err
 	}
@@ -1609,7 +1612,7 @@ func (s *connection) handleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte,
 }
 
 func (s *connection) handleFECWindowFrame(f *wire.FECWindowFrame) error {
-	return s.fec.UpdateWindowSize(f.Size, f.Epoch)
+	return s.fecManager.UpdateWindowSize(f.Size, f.Epoch)
 }
 
 // closeLocal closes the connection and send a CONNECTION_CLOSE containing the error
@@ -1759,7 +1762,7 @@ func (s *connection) restoreTransportParameters(params *wire.TransportParameters
 	s.streamsMap.UpdateLimits(params)
 	s.connStateMutex.Lock()
 	s.connState.SupportsDatagrams = s.supportsDatagrams()
-	s.connState.SupportsFEC = s.supportsFEC()
+	s.connState.SupportsFEC = s.fecEnabled()
 	s.connStateMutex.Unlock()
 }
 
@@ -1793,7 +1796,7 @@ func (s *connection) handleTransportParameters(params *wire.TransportParameters)
 
 	s.connStateMutex.Lock()
 	s.connState.SupportsDatagrams = s.supportsDatagrams()
-	s.connState.SupportsFEC = s.supportsFEC()
+	s.connState.SupportsFEC = s.fecEnabled()
 	s.connStateMutex.Unlock()
 	return nil
 }
@@ -1839,9 +1842,8 @@ func (s *connection) applyTransportParameters() {
 	s.rttStats.SetMaxAckDelay(params.MaxAckDelay)
 	s.connIDGenerator.SetMaxActiveConnIDs(params.ActiveConnectionIDLimit)
 	// TODO (ddritzenhoff) I believe this is where you have to set the transport parameters.
-	// s.fec = s.fec.SetParams(params.EnableFEC, params.DecoderFECScheme, params.InitialCodingWindow)
 	// TODO (ddritzenhoff) I'm not sure if I should wrap this in something like if persective.Server.
-	s.fec.SetInitialCodingWindow(params.InitialCodingWindow)
+	s.fecManager.SetInitialCodingWindow(params.InitialCodingWindow)
 	if params.StatelessResetToken != nil {
 		s.connIDManager.SetStatelessResetToken(*params.StatelessResetToken)
 	}
@@ -2353,6 +2355,10 @@ func (s *connection) OpenUniStreamSync(ctx context.Context) (SendStream, error) 
 	return s.streamsMap.OpenUniStreamSync(ctx)
 }
 
+func (s *connection) OpenUniStreamSyncWithFEC(ctx context.Context) (SendStream, error) {
+	return s.streamsMap.OpenUniStreamSyncWithFEC(ctx)
+}
+
 func (s *connection) newFlowController(id protocol.StreamID) flowcontrol.StreamFlowController {
 	initialSendWindow := s.peerParams.InitialMaxStreamDataUni
 	if id.Type() == protocol.StreamTypeBidi {
@@ -2434,6 +2440,26 @@ func (s *connection) SendDatagram(p []byte) error {
 	}
 
 	f := &wire.DatagramFrame{DataLenPresent: true}
+	if protocol.ByteCount(len(p)) > f.MaxDataLen(s.peerParams.MaxDatagramFrameSize, s.version) {
+		return &DatagramTooLargeError{
+			PeerMaxDatagramFrameSize: int64(s.peerParams.MaxDatagramFrameSize),
+		}
+	}
+	f.Data = make([]byte, len(p))
+	copy(f.Data, p)
+	return s.datagramQueue.Add(f)
+}
+
+func (s *connection) SendDatagramWithFEC(p []byte) error {
+	if !s.supportsDatagrams() {
+		return errors.New("datagram support disabled")
+	}
+
+	if !s.fecEnabled() {
+		return errors.New("FEC disabled")
+	}
+
+	f := &wire.DatagramFrame{DataLenPresent: true, FECProtected: true}
 	if protocol.ByteCount(len(p)) > f.MaxDataLen(s.peerParams.MaxDatagramFrameSize, s.version) {
 		return &DatagramTooLargeError{
 			PeerMaxDatagramFrameSize: int64(s.peerParams.MaxDatagramFrameSize),

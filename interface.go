@@ -137,6 +137,22 @@ type SendStream interface {
 	SetWriteDeadline(t time.Time) error
 }
 
+// FECConnection is a QUIC connection between two peers using FEC.
+type FECConnection interface {
+	// SendDatagramWithFEC sends a message using a QUIC datagram protected by FEC, as specified in RFC 9221 and draft-michel-quic-fec-01, respectively.
+	// There is no delivery guarantee for DATAGRAM frames, they are not retransmitted if lost.
+	// The payload of the datagram needs to fit into a single QUIC packet.
+	// In addition, a datagram may be dropped before being sent out if the available packet size suddenly decreases.
+	// If the payload is too large to be sent at the current time, a DatagramTooLargeError is returned.
+	SendDatagramWithFEC(payload []byte) error
+
+	// OpenUniStreamSyncWithFEC opens a new outgoing unidirectional QUIC stream using FEC.
+	// It blocks until a new stream can be opened.
+	// If the error is non-nil, it satisfies the net.Error interface.
+	// If the connection was closed due to a timeout, Timeout() will be true.
+	OpenUniStreamSyncWithFEC(context.Context) (SendStream, error)
+}
+
 // A Connection is a QUIC connection between two peers.
 // Calls to the connection (and to streams) can return the following types of errors:
 // * ApplicationError: for errors triggered by the application running on top of QUIC
@@ -146,6 +162,7 @@ type SendStream interface {
 // * StatelessResetError: when we receive a stateless reset (this is a net.Error temporary error)
 // * VersionNegotiationError: returned by the client, when there's no version overlap between the peers
 type Connection interface {
+	FECConnection
 	// AcceptStream returns the next stream opened by the peer, blocking until one is available.
 	// If the connection was closed due to a timeout, the error satisfies
 	// the net.Error interface, and Timeout() will be true.
