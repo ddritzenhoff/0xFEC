@@ -35,6 +35,8 @@ type SentPacketHandler interface {
 
 	GetLossDetectionTimeout() time.Time
 	OnLossDetectionTimeout() error
+
+	// TODO (ddritzenhoff) it could be that I need something like PacketRecovered(packetNumbers []protocol.PacketNumber) error here. I'm not surey yet.
 }
 
 type sentPacketTracker interface {

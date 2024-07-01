@@ -64,3 +64,16 @@ type StreamFrame struct {
 type DatagramFrame struct {
 	Length ByteCount
 }
+
+// A RepairFrame is a REPAIR frame.
+type RepairFrame struct {
+	RID     RID
+	BlockID BlockID
+	Length  ByteCount
+}
+
+// A SourceSymbolFrame is a SOURCE_SYMBOL frame.
+type SourceSymbolFrame struct {
+	SID    SID
+	Length ByteCount
+}

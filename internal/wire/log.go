@@ -68,6 +68,7 @@ func LogFrame(logger utils.Logger, frame Frame, sent bool) {
 		logger.Debugf("\t%s &wire.RetireConnectionIDFrame{SequenceNumber: %d}", dir, f.SequenceNumber)
 	case *NewTokenFrame:
 		logger.Debugf("\t%s &wire.NewTokenFrame{Token: %#x}", dir, f.Token)
+		// TODO (ddritzenhoff) consider adding cases for the fec frames.
 	default:
 		logger.Debugf("\t%s %#v", dir, frame)
 	}

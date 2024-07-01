@@ -12,6 +12,7 @@ import (
 func NewAckHandler(
 	initialPacketNumber protocol.PacketNumber,
 	initialMaxDatagramSize protocol.ByteCount,
+	// TODO (ddritzenhoff) may need an initialMaxSourceSymbolSize here as well.
 	rttStats *utils.RTTStats,
 	clientAddressValidated bool,
 	enableECN bool,

@@ -214,7 +214,8 @@ type connection struct {
 	tracer *logging.ConnectionTracer
 	logger utils.Logger
 
-	fecManager fec.Manager
+	fecManager  fec.Manager
+	repairQueue *repairQueue
 }
 
 var (
@@ -311,8 +312,6 @@ var newConnection = func(
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
 		RetrySourceConnectionID:   retrySrcConnID,
-		// TODO (ddritzenhoff) you'll have to make a flag out of this after adding Reed-Solomon.
-		DecoderFECScheme: protocol.XORFECScheme,
 	}
 	if s.config.EnableDatagrams {
 		params.MaxDatagramFrameSize = wire.MaxDatagramSize
@@ -340,7 +339,7 @@ var newConnection = func(
 		s.version,
 	)
 	s.cryptoStreamHandler = cs
-	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.fecManager)
+	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.fecManager, s.repairQueue)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
 	s.cryptoStreamManager = newCryptoStreamManager(cs, s.initialStream, s.handshakeStream, s.oneRTTStream)
 	return s
@@ -426,9 +425,6 @@ var newClientConnection = func(
 		// See https://github.com/quic-go/quic-go/pull/3806.
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
-		// TODO (ddritzenhoff) you'll have to make a flag out of this after adding Reed-Solomon.
-		DecoderFECScheme: protocol.XORFECScheme,
-		// TODO (ddritzenhoff) I'm quite sure the client doesn't send the InitialCodingWindow. This is something that it gets from the server.
 	}
 	if s.config.EnableDatagrams {
 		params.MaxDatagramFrameSize = wire.MaxDatagramSize
@@ -456,7 +452,7 @@ var newClientConnection = func(
 	s.cryptoStreamHandler = cs
 	s.cryptoStreamManager = newCryptoStreamManager(cs, s.initialStream, s.handshakeStream, oneRTTStream)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
-	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.fecManager)
+	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.fecManager, s.repairQueue)
 	if len(tlsConf.ServerName) > 0 {
 		s.tokenStoreKey = tlsConf.ServerName
 	} else {
@@ -510,6 +506,7 @@ func (s *connection) preSetup() {
 
 	s.windowUpdateQueue = newWindowUpdateQueue(s.streamsMap, s.connFlowController, s.framer.QueueControlFrame)
 	s.datagramQueue = newDatagramQueue(s.scheduleSending, s.logger)
+	s.repairQueue = newRepairQueue(s.scheduleSending)
 	s.connState.Version = s.version
 }
 
@@ -528,7 +525,6 @@ func (s *connection) run() error {
 	if err := s.handleHandshakeEvents(); err != nil {
 		return err
 	}
-	// TODO (ddritzenhoff) it could be that I actually create the FEC here as I'm dependent on the transport parameters.
 	go func() {
 		if err := s.sendQueue.Run(); err != nil {
 			s.destroyImpl(err)
@@ -696,7 +692,6 @@ func (s *connection) supportsDatagrams() bool {
 }
 
 func (s *connection) fecEnabled() bool {
-	// TODO (ddritzenhoff) not sure if this is the best way of doign this. Definitely take another look.
 	return s.peerParams.EnableFEC == 0x1 && s.config.EnableFEC
 }
 
@@ -1325,6 +1320,12 @@ func (s *connection) handleFrames(
 				if handleErr != nil {
 					continue
 				}
+				if err := s.handleFrame(frame, encLevel, destConnID); err != nil {
+					if log == nil {
+						return false, err
+					}
+					handleErr = err
+				}
 			}
 		default:
 			if err := s.handleFrame(frame, encLevel, destConnID); err != nil {
@@ -1604,7 +1605,7 @@ func (s *connection) handleDatagramFrame(f *wire.DatagramFrame) error {
 }
 
 func (s *connection) handleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error) {
-	_, blockData, err := s.fecManager.HandleSourceSymbolFrame(f)
+	blockData, err := s.fecManager.HandleSourceSymbolFrame(f)
 	if err != nil {
 		return nil, err
 	}
@@ -1701,6 +1702,10 @@ func (s *connection) handleCloseError(closeErr *closeError) {
 	s.connIDManager.Close()
 	if s.datagramQueue != nil {
 		s.datagramQueue.CloseWithError(e)
+	}
+
+	if s.repairQueue != nil {
+		s.repairQueue.CloseWithError(e)
 	}
 
 	if s.tracer != nil && s.tracer.ClosedConnection != nil && !errors.As(e, &recreateErr) {
@@ -1841,7 +1846,6 @@ func (s *connection) applyTransportParameters() {
 	s.connFlowController.UpdateSendWindow(params.InitialMaxData)
 	s.rttStats.SetMaxAckDelay(params.MaxAckDelay)
 	s.connIDGenerator.SetMaxActiveConnIDs(params.ActiveConnectionIDLimit)
-	// TODO (ddritzenhoff) I believe this is where you have to set the transport parameters.
 	// TODO (ddritzenhoff) I'm not sure if I should wrap this in something like if persective.Server.
 	s.fecManager.SetInitialCodingWindow(params.InitialCodingWindow)
 	if params.StatelessResetToken != nil {

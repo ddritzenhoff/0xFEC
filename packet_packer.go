@@ -37,12 +37,15 @@ type sealer interface {
 type payload struct {
 	streamFrames []ackhandler.StreamFrame
 	frames       []ackhandler.Frame
-	// TODO (ddritzenhoff) not sure if you need an ackhandler.Frame here.
+
+	ack    *wire.AckFrame
+	length protocol.ByteCount
+
+	// fec
+	// fecFrames represents all the frames other than stream frames to go within a SOURCE_SYMBOL frame.
 	fecFrames []ackhandler.Frame
-	// TODO (ddritzenhoff) try to figure out a way to coalesce the two fec slices.
+	// fecStreamFrames represents all the stream frames to go within a SOURCE_SYMBOL frame.
 	fecStreamFrames []ackhandler.StreamFrame
-	ack             *wire.AckFrame
-	length          protocol.ByteCount
 }
 
 type longHeaderPacket struct {
@@ -131,17 +134,17 @@ type packetPacker struct {
 
 	token []byte
 
-	pnManager packetNumberManager
-	framer    frameSource
-	acks      ackFrameSource
-	// TODO (ddritzenhoff) it could be that you add another datagramFECQueue here. I'm not exactly sure where the streamQueue is here.
+	pnManager           packetNumberManager
+	framer              frameSource
+	acks                ackFrameSource
 	datagramQueue       *datagramQueue
 	retransmissionQueue *retransmissionQueue
 	rand                rand.Rand
 
 	numNonAckElicitingAcks int
 
-	fecManager fec.Manager
+	fecManager  fec.Manager
+	repairQueue *repairQueue
 }
 
 var _ packer = &packetPacker{}
@@ -189,8 +192,9 @@ func newPacketPackerWithFEC(
 	datagramQueue *datagramQueue,
 	perspective protocol.Perspective,
 	fecMananger fec.Manager,
+	repairQueue *repairQueue,
 ) *packetPacker {
-	var b []byte
+	var b [8]byte
 	_, _ = crand.Read(b[:])
 
 	return &packetPacker{
@@ -207,6 +211,7 @@ func newPacketPackerWithFEC(
 		rand:                *rand.New(rand.NewSource(binary.BigEndian.Uint64(b[:]))),
 		pnManager:           packetNumberManager,
 		fecManager:          fecMananger,
+		repairQueue:         repairQueue,
 	}
 }
 
@@ -593,7 +598,7 @@ func (p *packetPacker) maybeGetAppDataPacketFor0RTT(sealer sealer, maxPacketSize
 	// TODO (ddritzenhoff) if FEC is enabled, you can reduce the maxPayloadSize by however many bytes the header of SOURCE_SYMBOL takes up.
 	// TODO (ddritzenhoff) will peerParams have been set by now? If so, I can reliably call p.fecSupported without having to worry about a nil dereference.
 	ssf := &wire.SourceSymbolFrame{}
-	maxPayloadSize := maxPacketSize - hdr.GetLength(v) - protocol.ByteCount(sealer.Overhead()) - ssf.HeaderMaxOverhead()
+	maxPayloadSize := maxPacketSize - hdr.GetLength(v) - protocol.ByteCount(sealer.Overhead()) - ssf.MaxHeaderLen()
 	return hdr, p.maybeGetAppDataPacket(maxPayloadSize, false, false, v)
 }
 
@@ -601,7 +606,7 @@ func (p *packetPacker) maybeGetShortHeaderPacket(sealer handshake.ShortHeaderSea
 	// TODO (ddritzenhoff) if FEC is enabled, you can reduce the maxPayloadSize by however many bytes the header of SOURCE_SYMBOL takes up.
 	// TODO (ddritzenhoff) will peerParams have been set by now? If so, I can reliably call p.fecSupported without having to worry about a nil dereference.
 	ssf := &wire.SourceSymbolFrame{}
-	maxPayloadSize := maxPacketSize - hdrLen - protocol.ByteCount(sealer.Overhead()) - ssf.HeaderMaxOverhead()
+	maxPayloadSize := maxPacketSize - hdrLen - protocol.ByteCount(sealer.Overhead()) - ssf.MaxHeaderLen()
 	return p.maybeGetAppDataPacket(maxPayloadSize, onlyAck, ackAllowed, v)
 }
 
@@ -650,6 +655,23 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAc
 		}
 	}
 
+	addedRepairFrame := false
+	if p.repairQueue != nil {
+		if f := p.repairQueue.Peek(); f != nil {
+			size := f.Length(v)
+			if size <= maxFrameSize-pl.length { // Repair frame fits
+				pl.frames = append(pl.frames, ackhandler.Frame{Frame: f})
+				pl.length += size
+				p.repairQueue.Pop()
+				addedRepairFrame = true
+			} else {
+				// this means the repair frame can't fit, which is a serious problem and shouldn't be possible.
+				// TODO (ddritzenhoff) replace panic with something more constructive.
+				panic("no space for repair frame")
+			}
+		}
+	}
+
 	// TODO (ddritzenhoff) the FEC_WINDOW frame should probably play a role here too.
 
 	if p.datagramQueue != nil {
@@ -663,7 +685,7 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAc
 				}
 				pl.length += size
 				p.datagramQueue.Pop()
-			} else if !hasAck {
+			} else if !hasAck && !addedRepairFrame {
 				// The DATAGRAM frame doesn't fit, and the packet doesn't contain an ACK.
 				// Discard this frame. There's no point in retrying this in the next packet,
 				// as it's unlikely that the available packet size will increase.
@@ -910,6 +932,7 @@ func (p *packetPacker) appendShortHeaderPacket(
 	if newPN := p.pnManager.PopPacketNumber(protocol.Encryption1RTT); newPN != pn {
 		return shortHeaderPacket{}, fmt.Errorf("packetPacker BUG: Peeked and Popped packet numbers do not match: expected %d, got %d", pn, newPN)
 	}
+	// TODO (ddritzenhoff) should I be doing anything with FEC here?
 	return shortHeaderPacket{
 		PacketNumber:         pn,
 		PacketNumberLen:      pnLen,
@@ -960,38 +983,36 @@ func (p *packetPacker) appendPacketPayload(raw []byte, pl payload, paddingLen pr
 	fecEnabled := false
 	var sourceSymbolHeaderLen protocol.ByteCount
 	if len(pl.fecStreamFrames) > 0 || len(pl.fecFrames) > 0 {
-		// rather than creating a new SOURCE_SYMBOL frame, copying the contents of the FEC frames into its buffer and later copying that buffer into yet another buffer, it makes more sense to simply add the header content of the SOURCE_SYMBOL frame and the contents of the FEC frames directly to the final buffer.
 		fecEnabled = true
-
-		// TODO (ddritzenhoff) you can optimize this further with a little bit of unsafe code.
-		var payloadLen protocol.ByteCount
-		// Add all frames other than the stream frames.
+		payload := make([]byte, 0, protocol.MaxPacketBufferSize)
 		for _, f := range pl.fecFrames {
-			payloadLen += f.Frame.Length(v)
+			var err error
+			payload, err = f.Frame.Append(payload, v)
+			if err != nil {
+				return nil, err
+			}
 		}
-		// Add stream frames
+
 		for _, f := range pl.fecStreamFrames {
-			payloadLen += f.Frame.Length(v)
-		}
-
-		ssf := &wire.SourceSymbolFrame{}
-		nextSID := p.fecManager.NextSID()
-		raw = ssf.AppendHeader(raw, v, nextSID, payloadLen)
-		sourceSymbolHeaderLen = ssf.HeaderOverhead(nextSID, payloadLen)
-
-		for _, f := range pl.fecFrames {
 			var err error
-			raw, err = f.Frame.Append(raw, v)
+			payload, err = f.Frame.Append(payload, v)
 			if err != nil {
 				return nil, err
 			}
 		}
-		for _, f := range pl.streamFrames {
-			var err error
-			raw, err = f.Frame.Append(raw, v)
-			if err != nil {
-				return nil, err
-			}
+
+		ssf := wire.NewSourceSymbolFrame(p.fecManager.NextSID(), payload)
+		sourceSymbolHeaderLen = ssf.HeadLen()
+		repairFrames, err := p.fecManager.AddSourceSymbolFrame(ssf)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range repairFrames {
+			p.repairQueue.Add(f)
+		}
+		raw, err = ssf.Append(raw, v)
+		if err != nil {
+			return nil, err
 		}
 	}
 

@@ -15,6 +15,14 @@ type SourceSymbolFrame struct {
 	Payload []byte
 }
 
+func NewSourceSymbolFrame(SID protocol.SID, Payload []byte) *SourceSymbolFrame {
+	return &SourceSymbolFrame{
+		SID:        SID,
+		PayloadLen: protocol.ByteCount(len(Payload)),
+		Payload:    Payload,
+	}
+}
+
 func ParseSourceSymbolFrame(r *bytes.Reader, _ protocol.Version) (*SourceSymbolFrame, error) {
 	frame := &SourceSymbolFrame{}
 	sid, err := quicvarint.Read(r)
@@ -39,24 +47,19 @@ func ParseSourceSymbolFrame(r *bytes.Reader, _ protocol.Version) (*SourceSymbolF
 	return frame, nil
 }
 
-func (f *SourceSymbolFrame) AppendHeader(b []byte, _ protocol.Version, sid protocol.SID, payloadLen protocol.ByteCount) []byte {
-	b = quicvarint.Append(b, uint64(sourceSymbolFrameType))
-	b = quicvarint.Append(b, uint64(sid))
-	b = quicvarint.Append(b, uint64(payloadLen))
-	return b
+func (f *SourceSymbolFrame) HeadLen() protocol.ByteCount {
+	return quicvarint.Len(uint64(sourceSymbolFrameType)) + quicvarint.Len(uint64(f.SID)) + quicvarint.Len(uint64(f.PayloadLen))
 }
 
-func (f *SourceSymbolFrame) HeaderOverhead(sid protocol.SID, payloadLen protocol.ByteCount) protocol.ByteCount {
-	return quicvarint.Len(uint64(sourceSymbolFrameType)) + quicvarint.Len(uint64(sid)) + quicvarint.Len(uint64(payloadLen))
-}
-
-func (f *SourceSymbolFrame) HeaderMaxOverhead() protocol.ByteCount {
+func (f *SourceSymbolFrame) MaxHeaderLen() protocol.ByteCount {
 	// Realistically, SID will never be anything more than 2 bytes, and the payload Length will never be anything more 4 bytes.
 	return quicvarint.Len(uint64(sourceSymbolFrameType)) + 2 + 4
 }
 
 func (f *SourceSymbolFrame) Append(b []byte, v protocol.Version) ([]byte, error) {
-	b = f.AppendHeader(b, v, f.SID, f.PayloadLen)
+	b = quicvarint.Append(b, uint64(sourceSymbolFrameType))
+	b = quicvarint.Append(b, uint64(f.SID))
+	b = quicvarint.Append(b, uint64(f.PayloadLen))
 	b = append(b, f.Payload...)
 	return b, nil
 }
