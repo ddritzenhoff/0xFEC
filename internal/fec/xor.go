@@ -14,15 +14,20 @@ type Block struct {
 	id                    protocol.BlockID
 	params                blockParams
 	biggestSourceLenSoFar int
-	sidToSourceData       map[protocol.SID][]byte
+	sidToSourceData       map[protocol.SID]*Source
 	ridToRepairData       map[protocol.RID][]byte
+}
+
+type Source struct {
+	data          []byte
+	returnedToApp bool
 }
 
 func newBlock(id protocol.BlockID, params blockParams) *Block {
 	return &Block{
 		id:                    id,
 		params:                params,
-		sidToSourceData:       make(map[protocol.SID][]byte),
+		sidToSourceData:       make(map[protocol.SID]*Source),
 		biggestSourceLenSoFar: 0,
 		ridToRepairData:       make(map[protocol.RID][]byte),
 	}
@@ -35,6 +40,7 @@ func (b *Block) repairFrames() ([]*wire.RepairFrame, error) {
 	return nil, nil
 }
 
+// data only returns the data that hasn't been handed back to the application yet.
 func (b *Block) data() ([]byte, error) {
 	if len(b.sidToSourceData) == b.params.k {
 		// we have all the needed source symbols, so we can just combine them.
@@ -48,17 +54,40 @@ func (b *Block) data() ([]byte, error) {
 	return nil, fmt.Errorf("fec block is not full")
 }
 
+func (b *Block) addRepairSymbol(f *wire.RepairFrame) (isBlockFull bool) {
+	if _, ok := b.ridToRepairData[f.RID]; !ok {
+		b.ridToRepairData[f.RID] = f.Data
+	}
+
+	// TODO (ddritzenhoff) this logic is wrong for anything other than (3, 2). Be sure to fix this.
+	return len(b.sidToSourceData) == b.params.k || len(b.sidToSourceData)+len(b.ridToRepairData) >= b.params.k
+}
+
 func (b *Block) addSourceSymbol(f *wire.SourceSymbolFrame) (isBlockFull bool) {
 	if _, ok := b.sidToSourceData[f.SID]; !ok {
-		b.sidToSourceData[f.SID] = f.Payload
+		b.sidToSourceData[f.SID] = &Source{
+			data:          f.Payload,
+			returnedToApp: false,
+		}
 		if b.biggestSourceLenSoFar < len(f.Payload) {
 			b.biggestSourceLenSoFar = len(f.Payload)
 		}
 	}
 	// The block is full when there are enough source symbols to satisfy k in the (n, k) block encoding scheme. Alternatively, the block is also full when the number of source symbols + the number of repair symbols are equal or greater than k.
+	// TODO (ddritzenhoff) this logic is wrong for anything other than (3, 2). Be sure to fix this.
 	return len(b.sidToSourceData) == b.params.k || len(b.sidToSourceData)+len(b.ridToRepairData) >= b.params.k
 }
 
+func (b *Block) processSymbol(f *wire.SourceSymbolFrame) ([]byte, error) {
+	if s, ok := b.sidToSourceData[f.SID]; ok {
+		s.returnedToApp = true
+		return s.data, nil
+	}
+	return nil, fmt.Errorf("source symbol does not belong to block")
+}
+
+// TODO (ddritzenhoff) I'm quite sure combining the source symbols like this is ok,
+// but I'm NOT positive. Double check this.
 func (b *Block) combineSourceSymbols() []byte {
 	// Get and sort the keys.
 	sids := make([]protocol.SID, 0, len(b.sidToSourceData))
@@ -70,12 +99,16 @@ func (b *Block) combineSourceSymbols() []byte {
 	// Combine the source symbols in order.
 	combined := make([]byte, 0, b.params.k*protocol.MaxPacketBufferSize)
 	for _, sid := range sids {
-		combined = append(combined, b.sidToSourceData[sid]...)
+		// Only add the sources that haven't already been returned to the app.
+		if !b.sidToSourceData[sid].returnedToApp {
+			combined = append(combined, b.sidToSourceData[sid].data...)
+		}
 	}
 
 	return combined
 }
 
+// TODO (ddritzenhoff) note that this only works for XOR right now. When it comes time to support other encoding schemes, you'll have to do a bit of abstraction.
 func (b *Block) RecoverSymbols() error {
 	// if you manage to recover the symbols, the block will be complete. At that point, you would be able to hand over the data to receive API.
 	if len(b.sidToSourceData)+len(b.ridToRepairData) < int(b.params.k) {
@@ -91,8 +124,8 @@ func (b *Block) RecoverSymbols() error {
 	for _, data := range b.ridToRepairData {
 		b.xor(recoveredSymbol, data)
 	}
-	for _, data := range b.sidToSourceData {
-		b.xor(recoveredSymbol, data)
+	for _, source := range b.sidToSourceData {
+		b.xor(recoveredSymbol, source.data)
 	}
 
 	// at this point, the symbol should be recovered. We just have to trim the extra zeros that may be hanging at the end.
@@ -122,10 +155,10 @@ func (b *Block) GetRepairSymbols() ([]*wire.RepairFrame, error) {
 	xorSoFar := make([]byte, b.biggestSourceLenSoFar)
 	smallestSID := protocol.SID(math.MaxUint64)
 	largestSID := protocol.SID(0)
-	for sid, data := range b.sidToSourceData {
+	for sid, source := range b.sidToSourceData {
 		smallestSID = min(smallestSID, sid)
 		largestSID = max(largestSID, sid)
-		xorSoFar = b.xor(xorSoFar, data)
+		xorSoFar = b.xor(xorSoFar, source.data)
 	}
 
 	rid, err := protocol.NewRID(smallestSID, largestSID)
@@ -133,7 +166,7 @@ func (b *Block) GetRepairSymbols() ([]*wire.RepairFrame, error) {
 		return nil, err
 	}
 
-	return []*wire.RepairFrame{wire.NewRepairFrame(rid, b.id, xorSoFar)}, nil
+	return []*wire.RepairFrame{wire.NewRepairFrame(rid, xorSoFar)}, nil
 }
 
 // TODO (ddritzenhoff) this is the slow way of doing XOR, so you'll want to eventually add the faster version.

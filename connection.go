@@ -1327,6 +1327,42 @@ func (s *connection) handleFrames(
 					handleErr = err
 				}
 			}
+		case *wire.RepairFrame:
+			blockData, err := s.handleRepairFrame(f)
+			if err != nil {
+				if log == nil {
+					return false, err
+				}
+				// If we're logging, we need to keep parsing (but not handling) all frames.
+				handleErr = err
+			}
+			for len(blockData) > 0 {
+				l, frame, err := s.frameParser.ParseNext(blockData, encLevel, s.version)
+				if err != nil {
+					return false, err
+				}
+				blockData = blockData[l:]
+				if frame == nil {
+					break
+				}
+				if ackhandler.IsFrameAckEliciting(frame) {
+					isAckEliciting = true
+				}
+				if log != nil {
+					frames = append(frames, logutils.ConvertFrame(frame))
+				}
+				// An error occurred handling a previous frame.
+				// Don't handle the current frame.
+				if handleErr != nil {
+					continue
+				}
+				if err := s.handleFrame(frame, encLevel, destConnID); err != nil {
+					if log == nil {
+						return false, err
+					}
+					handleErr = err
+				}
+			}
 		default:
 			if err := s.handleFrame(frame, encLevel, destConnID); err != nil {
 				if log == nil {
@@ -1606,6 +1642,14 @@ func (s *connection) handleDatagramFrame(f *wire.DatagramFrame) error {
 
 func (s *connection) handleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error) {
 	blockData, err := s.fecManager.HandleSourceSymbolFrame(f)
+	if err != nil {
+		return nil, err
+	}
+	return blockData, nil
+}
+
+func (s *connection) handleRepairFrame(f *wire.RepairFrame) ([]byte, error) {
+	blockData, err := s.fecManager.HandleRepairFrame(f)
 	if err != nil {
 		return nil, err
 	}

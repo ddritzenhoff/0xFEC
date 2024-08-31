@@ -595,18 +595,12 @@ func (p *packetPacker) maybeGetAppDataPacketFor0RTT(sealer sealer, maxPacketSize
 	}
 
 	hdr := p.getLongHeader(protocol.Encryption0RTT, v)
-	// TODO (ddritzenhoff) if FEC is enabled, you can reduce the maxPayloadSize by however many bytes the header of SOURCE_SYMBOL takes up.
-	// TODO (ddritzenhoff) will peerParams have been set by now? If so, I can reliably call p.fecSupported without having to worry about a nil dereference.
-	ssf := &wire.SourceSymbolFrame{}
-	maxPayloadSize := maxPacketSize - hdr.GetLength(v) - protocol.ByteCount(sealer.Overhead()) - ssf.MaxHeaderLen()
+	maxPayloadSize := maxPacketSize - hdr.GetLength(v) - protocol.ByteCount(sealer.Overhead())
 	return hdr, p.maybeGetAppDataPacket(maxPayloadSize, false, false, v)
 }
 
 func (p *packetPacker) maybeGetShortHeaderPacket(sealer handshake.ShortHeaderSealer, hdrLen protocol.ByteCount, maxPacketSize protocol.ByteCount, onlyAck, ackAllowed bool, v protocol.Version) payload {
-	// TODO (ddritzenhoff) if FEC is enabled, you can reduce the maxPayloadSize by however many bytes the header of SOURCE_SYMBOL takes up.
-	// TODO (ddritzenhoff) will peerParams have been set by now? If so, I can reliably call p.fecSupported without having to worry about a nil dereference.
-	ssf := &wire.SourceSymbolFrame{}
-	maxPayloadSize := maxPacketSize - hdrLen - protocol.ByteCount(sealer.Overhead()) - ssf.MaxHeaderLen()
+	maxPayloadSize := maxPacketSize - hdrLen - protocol.ByteCount(sealer.Overhead())
 	return p.maybeGetAppDataPacket(maxPayloadSize, onlyAck, ackAllowed, v)
 }
 
@@ -664,7 +658,7 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAc
 				pl.length += size
 				p.repairQueue.Pop()
 				addedRepairFrame = true
-			} else {
+			} else if !hasAck {
 				// this means the repair frame can't fit, which is a serious problem and shouldn't be possible.
 				// TODO (ddritzenhoff) replace panic with something more constructive.
 				panic("no space for repair frame")
@@ -732,9 +726,9 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAc
 
 		// TODO (ddritzenhoff) figure out where stream frames get assigned to a handler function.
 
-		// TODO (ddritzenhoff) There is currently a bug in which if the length of the packet is within the range of MAX_SIZE - len(header of SOURCE_SYMBOL) + 1 to MAX_SIZE, there won't be enough space to add in the overhead of the SOURCE_SYMBOL. The question is how to elegantly accomodate this case.
-
-		streamFrames, lengthAdded := p.framer.AppendStreamFrames(pl.streamFrames, maxFrameSize-pl.length, v)
+		// XXX (ddritzenhoff) `ssf.MaxHeaderLen()` is needed to account for the size of the source symbol frame header in the event that any FEC streams are enabled. I'm subtracting in every scenario as I don't know if I'll be producing a source symbol frame this round or not. Maybe think of a better way to do this.
+		ssf := wire.SourceSymbolFrame{}
+		streamFrames, lengthAdded := p.framer.AppendStreamFrames(pl.streamFrames, maxFrameSize-pl.length-ssf.MaxHeaderLen(), v)
 		for _, streamFrame := range streamFrames {
 			if streamFrame.Frame.FECProtected {
 				pl.fecStreamFrames = append(pl.fecStreamFrames, streamFrame)

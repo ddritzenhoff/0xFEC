@@ -9,9 +9,9 @@ import (
 )
 
 type Manager interface {
-	// HandleRepairFrame()
+	HandleRepairFrame(f *wire.RepairFrame) ([]byte, error)
 	// HandleSourceSymbolFrame is a receiver-side function
-	HandleSourceSymbolFrame(f *wire.SourceSymbolFrame) (blockData []byte, _ error)
+	HandleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error)
 	// HandleSymbolAckFrame()
 	// HandleFECWindowFrame()
 	NextSID() protocol.SID
@@ -27,6 +27,9 @@ type manager struct {
 	params       blockParams
 	window       fecWindow
 	blocks       map[protocol.BlockID]*Block
+	// TODO (ddritzenhoff) come up with a better way to do this. Could I do something like having an integer keep track of the lowest blockID block to already have been processed?
+	// NOTE: this is a receiver-side only data structure.
+	processedBlocks map[protocol.BlockID]struct{}
 }
 
 func NewFECManager() *manager {
@@ -36,9 +39,10 @@ func NewFECManager() *manager {
 			n: 3,
 			k: 2,
 		},
-		window:  *newFECWindow(),
-		blocks:  make(map[protocol.BlockID]*Block),
-		nextSID: 0,
+		window:          *newFECWindow(),
+		blocks:          make(map[protocol.BlockID]*Block),
+		processedBlocks: make(map[protocol.BlockID]struct{}),
+		nextSID:         0,
 	}
 }
 
@@ -56,8 +60,8 @@ func (m *manager) sidToBlockID(sid protocol.SID) protocol.BlockID {
 
 func (m *manager) AddSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]*wire.RepairFrame, error) {
 	blockID := m.sidToBlockID(f.SID)
-	block, ok := m.blocks[blockID]
-	if !ok {
+	block, blockExists := m.blocks[blockID]
+	if !blockExists {
 		block = newBlock(blockID, m.params)
 		m.blocks[blockID] = block
 	}
@@ -68,7 +72,6 @@ func (m *manager) AddSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]*wire.Repai
 		if err != nil {
 			return nil, err
 		}
-		// TODO (ddritzenhoff) keep an eye on this and make sure it's not a mistake.
 		// drop the block as you don't need it anymore.
 		delete(m.blocks, blockID)
 		return repairFrames, nil
@@ -76,26 +79,58 @@ func (m *manager) AddSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]*wire.Repai
 	return nil, nil
 }
 
-// TODO (ddritzenhoff) need to add in FEC_WINDOW logic. Right now, I would store every single symbol.
-func (m *manager) HandleSourceSymbolFrame(f *wire.SourceSymbolFrame) (blockData []byte, _ error) {
-	blockID := m.sidToBlockID(f.SID)
-	block, ok := m.blocks[blockID]
-	if !ok {
-		block = newBlock(blockID, m.params)
-		m.blocks[blockID] = block
+func (m *manager) HandleRepairFrame(f *wire.RepairFrame) ([]byte, error) {
+	if m.sidToBlockID(f.RID.SmallestSID) != m.sidToBlockID(f.RID.LargestSID) {
+		return nil, fmt.Errorf("RID smallestSID (%d) and largestSID (%d) correspond to different blocks", f.RID.SmallestSID, f.RID.LargestSID)
 	}
-
-	isBlockFull := block.addSourceSymbol(f)
+	blockID := m.sidToBlockID(f.RID.SmallestSID)
+	if _, processedBlock := m.processedBlocks[blockID]; processedBlock {
+		// we've already processed the block, so we can ignore this repair symbol.
+		return nil, nil
+	}
+	block, blockExists := m.blocks[blockID]
+	if !blockExists {
+		return nil, fmt.Errorf("repair symbol generated for block that doesn't exist and hasn't been processed")
+	}
+	isBlockFull := block.addRepairSymbol(f)
 	if isBlockFull {
 		blockData, err := block.data()
 		if err != nil {
 			return nil, err
 		}
-		// We have collected all of the requisite source symbols for the respective block, so we can now drop the block entirely.
+		m.processedBlocks[blockID] = struct{}{}
 		delete(m.blocks, blockID)
 		return blockData, nil
 	}
 	return nil, nil
+}
+
+// TODO (ddritzenhoff) need to add in FEC_WINDOW logic. Right now, I would store every single symbol.
+func (m *manager) HandleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error) {
+	blockID := m.sidToBlockID(f.SID)
+	if _, processedBlock := m.processedBlocks[blockID]; processedBlock {
+		// we've already processed the block, so we can ignore this source symbol.
+		return nil, nil
+	}
+	block, blockExists := m.blocks[blockID]
+	if !blockExists {
+		block = newBlock(blockID, m.params)
+		m.blocks[blockID] = block
+	}
+	isBlockFull := block.addSourceSymbol(f)
+	if isBlockFull {
+		// Only retrieve the data that hasn't already been passed to the application.
+		blockData, err := block.data()
+		if err != nil {
+			return nil, err
+		}
+		// We have collected all of the requisite source symbols for the respective block, so we can now drop the block entirely.
+		m.processedBlocks[blockID] = struct{}{}
+		delete(m.blocks, blockID)
+		return blockData, nil
+	}
+	// Mark this source symbol as already having been passed up to the application, which ensures it'll only be passed once.
+	return block.processSymbol(f)
 }
 
 // UpdateWindowSize updates the window size, which denotes the maximum number of received source symbols that can be stored at a time.
@@ -112,7 +147,7 @@ type blockParams struct {
 	n int
 	// k denotes the total number of source symbols in the block
 	k int
-	// (n-k) will then provide you with the number of repair symbols within the scheme (e.g. (3, 2) denotes 2 source symbols and (3-2) repair symbols for a total of 3 symbols in the block)
+	// (n-k) indicates the number of repair symbols within the scheme (e.g. (3, 2) denotes 2 source symbols and (3-2=1) repair symbols for a total of 3 symbols in the block)
 }
 
 type fecWindow struct {

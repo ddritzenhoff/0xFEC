@@ -9,17 +9,15 @@ import (
 )
 
 type SourceSymbolFrame struct {
-	SID        protocol.SID
-	PayloadLen protocol.ByteCount
+	SID protocol.SID
 	// TODO (ddritzenhoff) I wonder if I can make this more efficient by pre-allocating a size when I create the frame for the first time.
 	Payload []byte
 }
 
 func NewSourceSymbolFrame(SID protocol.SID, Payload []byte) *SourceSymbolFrame {
 	return &SourceSymbolFrame{
-		SID:        SID,
-		PayloadLen: protocol.ByteCount(len(Payload)),
-		Payload:    Payload,
+		SID:     SID,
+		Payload: Payload,
 	}
 }
 
@@ -48,7 +46,7 @@ func ParseSourceSymbolFrame(r *bytes.Reader, _ protocol.Version) (*SourceSymbolF
 }
 
 func (f *SourceSymbolFrame) HeadLen() protocol.ByteCount {
-	return quicvarint.Len(uint64(sourceSymbolFrameType)) + quicvarint.Len(uint64(f.SID)) + quicvarint.Len(uint64(f.PayloadLen))
+	return quicvarint.Len(uint64(sourceSymbolFrameType)) + quicvarint.Len(uint64(f.SID)) + quicvarint.Len(uint64(len(f.Payload)))
 }
 
 func (f *SourceSymbolFrame) MaxHeaderLen() protocol.ByteCount {
@@ -59,12 +57,12 @@ func (f *SourceSymbolFrame) MaxHeaderLen() protocol.ByteCount {
 func (f *SourceSymbolFrame) Append(b []byte, v protocol.Version) ([]byte, error) {
 	b = quicvarint.Append(b, uint64(sourceSymbolFrameType))
 	b = quicvarint.Append(b, uint64(f.SID))
-	b = quicvarint.Append(b, uint64(f.PayloadLen))
+	b = quicvarint.Append(b, uint64(len(f.Payload)))
 	b = append(b, f.Payload...)
 	return b, nil
 }
 
 // Length of a written frame
 func (f *SourceSymbolFrame) Length(_ protocol.Version) protocol.ByteCount {
-	return quicvarint.Len(uint64(sourceSymbolFrameType)) + quicvarint.Len(uint64(f.SID)) + quicvarint.Len(uint64(f.PayloadLen)) + protocol.ByteCount(len(f.Payload))
+	return quicvarint.Len(uint64(sourceSymbolFrameType)) + quicvarint.Len(uint64(f.SID)) + quicvarint.Len(uint64(len(f.Payload))) + protocol.ByteCount(len(f.Payload))
 }
