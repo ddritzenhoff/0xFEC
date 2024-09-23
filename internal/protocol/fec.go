@@ -1,32 +1,24 @@
 package protocol
 
-import "fmt"
-
-type FECSchemeID byte
-
 type FECWindowEpoch uint16
 type FECWindowSize uint32
 
-type SID uint64
+// SourceSymbolID (aka. SSID) represents the ID for a source symbol. These are unique.
+type SourceSymbolID uint64
 
-// TODO (ddritzenhoff) This is just a way to distinguish the repair frames that support the same block. This may prove to be unnecessary, so just be sure to double check this.
-type RID struct {
-	SmallestSID SID
-	LargestSID  SID
+// BlockMetadata represents the requisite metadata for block encoding schemes.
+type BlockMetadata struct {
+	BlockID  BlockID
+	ParityID ParityID
 }
 
-func NewRID(smallestSID SID, largestSID SID) (RID, error) {
-	if smallestSID >= largestSID {
-		return RID{}, fmt.Errorf("SmallestSID must be smaller than LargestSID: SmallestSID %d, LargestSID %d", smallestSID, largestSID)
-	}
-
-	return RID{
-		smallestSID,
-		largestSID,
-	}, nil
-}
-
+// BlockID represents the ID of the block. IDs of blocks start at 0 and increase by 1 for each subsequent block.
 type BlockID uint64
+
+// ParityID represents the order of parity symbols within the block. This is important to properly reconstruct missing source symbols.
+type ParityID uint64
+
+type FECSchemeID byte
 
 const (
 	FECDisabled          FECSchemeID = iota // 0x0
@@ -42,5 +34,15 @@ func (f FECSchemeID) String() string {
 		return "ReedSolomon"
 	default:
 		return "unknown"
+	}
+}
+
+// IsValid determines whether the provided FEC scheme is supported.
+func (f FECSchemeID) IsValid() bool {
+	switch f {
+	case XORFECScheme, ReedSolomonFECScheme:
+		return true
+	default:
+		return false
 	}
 }

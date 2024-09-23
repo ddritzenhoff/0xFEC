@@ -110,6 +110,35 @@ type StatelessResetToken [16]byte
 // Ethernet's max packet size is 1500 bytes,  1500 - 48 = 1452.
 const MaxPacketBufferSize = 1452
 
+/*
+MaxFECHeaderOverhead represents the maximum overhead that can come from FEC.
+This affects the maximum buffer size.
+
+The largest overhead from FEC comes as a result of the repair frame.
+This is because repair frames contain Source Symbol payloads + the length
+of the payload in addition to its own header information. In total, this
+comes out to 18 bytes.
+
+Repair Overhead (normal case, 15 bytes)
+repairFrameType --> 8 bytes
+BlockID --> 2 bytes
+ParityID --> 1 byte
+Payload len (determined by b.biggestSourceLenSoFar) --> 2 bytes
+Source Symbol len --> 2 bytes
+
+Repair Overhead (worst case, 18 bytes)
+repairFrameType --> 8 bytes
+BlockID --> 4 bytes
+ParityID --> 2 bytes
+Payload len (determined by b.biggestSourceLenSoFar) --> 2 byets
+Source Symbol len --> 2 byets
+*/
+const MaxFECHeaderOverhead = 18
+
+const MaxFECPacketBufferSize = MaxPacketBufferSize - MaxFECHeaderOverhead
+
+const RepairPayloadMetadataLen = 2
+
 // MaxLargePacketBufferSize is used when using GSO
 const MaxLargePacketBufferSize = 20 * 1024
 

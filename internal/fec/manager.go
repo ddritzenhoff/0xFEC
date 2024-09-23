@@ -4,49 +4,111 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/klauspost/reedsolomon"
 	"github.com/quic-go/quic-go/internal/protocol"
 	"github.com/quic-go/quic-go/internal/wire"
 )
 
-type Manager interface {
+// Sender represents sender-side functions.
+type Sender interface {
+	AddSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]*wire.RepairFrame, error)
+	NextSID() protocol.SourceSymbolID
+}
+
+// Receiver represents receiver-side functions.
+type Receiver interface {
 	HandleRepairFrame(f *wire.RepairFrame) ([]byte, error)
-	// HandleSourceSymbolFrame is a receiver-side function
 	HandleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error)
+}
+
+type Manager interface {
+	Sender
+	Receiver
+
+	// TODO (ddritzenhoff) implement at a later time.
 	// HandleSymbolAckFrame()
 	// HandleFECWindowFrame()
-	NextSID() protocol.SID
-	UpdateWindowSize(newSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error
-	// AddSourceSymbolFrame is a sender-side function
-	AddSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]*wire.RepairFrame, error)
-	SetInitialCodingWindow(ws protocol.FECWindowSize)
+	// UpdateWindowSize(newSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error
+	// SetInitialCodingWindow(ws protocol.FECWindowSize)
+}
+
+type blockStatus struct {
+	block *block
+	// isProcessed represents whether all the source symbols within the block have been passed up to the application.
+	isProcessed bool
 }
 
 type manager struct {
-	nextSIDMutex sync.Mutex
-	nextSID      protocol.SID
-	params       blockParams
-	window       fecWindow
-	blocks       map[protocol.BlockID]*Block
-	// TODO (ddritzenhoff) come up with a better way to do this. Could I do something like having an integer keep track of the lowest blockID block to already have been processed?
-	// NOTE: this is a receiver-side only data structure.
-	processedBlocks map[protocol.BlockID]struct{}
+	scheme              BlockFECScheme
+	nextSIDMutex        sync.Mutex
+	nextSID             protocol.SourceSymbolID
+	numTotSourceSymbols int
+	numTotRepairSymbols int
+	blockStatuses       map[protocol.BlockID]blockStatus
 }
 
-func NewFECManager() *manager {
-	return &manager{
-		// TODO (ddritzenhoff) Change the FEC scheme to be dynamic.
-		params: blockParams{
-			n: 3,
-			k: 2,
-		},
-		window:          *newFECWindow(),
-		blocks:          make(map[protocol.BlockID]*Block),
-		processedBlocks: make(map[protocol.BlockID]struct{}),
-		nextSID:         0,
+func NewSender(id protocol.FECSchemeID) (Sender, error) {
+	switch id {
+	case protocol.FECDisabled:
+		return nil, nil
+	case protocol.XORFECScheme:
+		xorScheme := xorScheme{}
+		return NewManager(&xorScheme, 2, 1)
+	case protocol.ReedSolomonFECScheme:
+		numTotSourceSymbols := 20
+		numTotRepairSymbols := 10
+		reedSolomonEncoder, err := reedsolomon.New(numTotSourceSymbols, numTotRepairSymbols)
+		if err != nil {
+			return nil, err
+		}
+		reedSolomonScheme := reedSolomonScheme{
+			enc: reedSolomonEncoder,
+		}
+		return NewManager(&reedSolomonScheme, numTotSourceSymbols, numTotRepairSymbols)
+	default:
+		return nil, fmt.Errorf("unknown FEC scheme: %d", id)
 	}
 }
 
-func (m *manager) NextSID() protocol.SID {
+func NewReceiver(id protocol.FECSchemeID) (Receiver, error) {
+	switch id {
+	case protocol.FECDisabled:
+		return nil, nil
+	case protocol.XORFECScheme:
+		xorScheme := xorScheme{}
+		return NewManager(&xorScheme, 2, 1)
+	case protocol.ReedSolomonFECScheme:
+		numTotSourceSymbols := 20
+		numTotRepairSymbols := 10
+		reedSolomonEncoder, err := reedsolomon.New(numTotSourceSymbols, numTotRepairSymbols)
+		if err != nil {
+			return nil, err
+		}
+		reedSolomonScheme := reedSolomonScheme{
+			enc: reedSolomonEncoder,
+		}
+		return NewManager(&reedSolomonScheme, numTotSourceSymbols, numTotRepairSymbols)
+	default:
+		return nil, fmt.Errorf("unknown FEC scheme: %d", id)
+	}
+}
+
+func NewManager(scheme BlockFECScheme, numTotSourceSymbols int, numTotRepairSymbols int) (*manager, error) {
+	if numTotSourceSymbols < 0 || numTotRepairSymbols < 0 {
+		return nil, fmt.Errorf("numTotSourceSymbols (%d) and numTotRepairSymbols (%d) may not be negative", numTotSourceSymbols, numTotRepairSymbols)
+	}
+
+	return &manager{
+		nextSID:             0,
+		numTotSourceSymbols: numTotSourceSymbols,
+		numTotRepairSymbols: numTotRepairSymbols,
+		scheme:              scheme,
+
+		blockStatuses: make(map[protocol.BlockID]blockStatus),
+	}, nil
+}
+
+func (m *manager) NextSID() protocol.SourceSymbolID {
 	m.nextSIDMutex.Lock()
 	ret := m.nextSID
 	m.nextSID++
@@ -54,130 +116,114 @@ func (m *manager) NextSID() protocol.SID {
 	return ret
 }
 
-func (m *manager) sidToBlockID(sid protocol.SID) protocol.BlockID {
-	return protocol.BlockID(uint64(sid) / uint64(m.params.k))
+func (m *manager) sidToBlockID(sid protocol.SourceSymbolID) protocol.BlockID {
+	return protocol.BlockID(uint64(sid) / uint64(m.numTotSourceSymbols))
 }
 
 func (m *manager) AddSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]*wire.RepairFrame, error) {
-	blockID := m.sidToBlockID(f.SID)
-	block, blockExists := m.blocks[blockID]
-	if !blockExists {
-		block = newBlock(blockID, m.params)
-		m.blocks[blockID] = block
+	blockID := m.sidToBlockID(f.SSID)
+	if _, exists := m.blockStatuses[blockID]; !exists {
+		m.blockStatuses[blockID] = blockStatus{
+			block:       newBlock(blockID, m.numTotSourceSymbols, m.numTotRepairSymbols),
+			isProcessed: false}
 	}
 
-	isBlockFull := block.addSourceSymbol(f)
-	if isBlockFull {
-		repairFrames, err := block.repairFrames()
+	bS := m.blockStatuses[blockID]
+	if bS.isProcessed {
+		// we've already processed the block, so we can ignore this source symbol
+		return nil, nil
+
+	}
+
+	err := bS.block.addSourceSymbol(f)
+	if err != nil {
+		return nil, err
+	}
+
+	// check if the block is complete, so we can generate repair frames.
+	if bS.block.isComplete() {
+		repairSymbols, err := m.scheme.repairSymbols(bS.block)
 		if err != nil {
 			return nil, err
 		}
-		// drop the block as you don't need it anymore.
-		delete(m.blocks, blockID)
-		return repairFrames, nil
+
+		// drop the block as you don't need it anymore
+		bS.block = nil
+		bS.isProcessed = true
+		m.blockStatuses[blockID] = bS
+		return repairSymbols, nil
 	}
+	m.blockStatuses[blockID] = bS
 	return nil, nil
 }
 
 func (m *manager) HandleRepairFrame(f *wire.RepairFrame) ([]byte, error) {
-	if m.sidToBlockID(f.RID.SmallestSID) != m.sidToBlockID(f.RID.LargestSID) {
-		return nil, fmt.Errorf("RID smallestSID (%d) and largestSID (%d) correspond to different blocks", f.RID.SmallestSID, f.RID.LargestSID)
+
+	// It's possible a repair frame arrives before any of its associated source symbol frames in the case they were dropped.
+	if _, exists := m.blockStatuses[f.Metadata.BlockID]; !exists {
+		m.blockStatuses[f.Metadata.BlockID] = blockStatus{
+			block:       newBlock(f.Metadata.BlockID, m.numTotSourceSymbols, m.numTotRepairSymbols),
+			isProcessed: false,
+		}
 	}
-	blockID := m.sidToBlockID(f.RID.SmallestSID)
-	if _, processedBlock := m.processedBlocks[blockID]; processedBlock {
-		// we've already processed the block, so we can ignore this repair symbol.
+
+	bS := m.blockStatuses[f.Metadata.BlockID]
+	if bS.isProcessed {
+		// we've already processed the block, so we can ignore this repair symbol
 		return nil, nil
 	}
-	block, blockExists := m.blocks[blockID]
-	if !blockExists {
-		return nil, fmt.Errorf("repair symbol generated for block that doesn't exist and hasn't been processed")
+
+	err := bS.block.addRepairSymbol(f)
+	if err != nil {
+		return nil, err
 	}
-	isBlockFull := block.addRepairSymbol(f)
-	if isBlockFull {
-		blockData, err := block.data()
+
+	if bS.block.isRecoverable() {
+		sourceSymbolBytes, err := m.scheme.recoverSymbolPayloads(bS.block)
 		if err != nil {
 			return nil, err
 		}
-		m.processedBlocks[blockID] = struct{}{}
-		delete(m.blocks, blockID)
-		return blockData, nil
+
+		// at this point, we've recovered all of the missing source symbols, which makes the block complete (i.e. processed)
+
+		bS.block = nil
+		bS.isProcessed = true
+		m.blockStatuses[f.Metadata.BlockID] = bS
+
+		return sourceSymbolBytes, nil
 	}
+	// the block is still not recoverable, so we wait
+	m.blockStatuses[f.Metadata.BlockID] = bS
 	return nil, nil
 }
 
-// TODO (ddritzenhoff) need to add in FEC_WINDOW logic. Right now, I would store every single symbol.
 func (m *manager) HandleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error) {
-	blockID := m.sidToBlockID(f.SID)
-	if _, processedBlock := m.processedBlocks[blockID]; processedBlock {
-		// we've already processed the block, so we can ignore this source symbol.
+	blockID := m.sidToBlockID(f.SSID)
+	if _, exists := m.blockStatuses[blockID]; !exists {
+		// create a new block if it doesn't exist
+		m.blockStatuses[blockID] = blockStatus{
+			block:       newBlock(blockID, m.numTotSourceSymbols, m.numTotRepairSymbols),
+			isProcessed: false,
+		}
+	}
+
+	bS := m.blockStatuses[blockID]
+	if bS.isProcessed {
+		// we've already processed the block, so we can ignore this source symbol
 		return nil, nil
 	}
-	block, blockExists := m.blocks[blockID]
-	if !blockExists {
-		block = newBlock(blockID, m.params)
-		m.blocks[blockID] = block
+
+	err := bS.block.addSourceSymbol(f)
+	if err != nil {
+		return nil, err
 	}
-	isBlockFull := block.addSourceSymbol(f)
-	if isBlockFull {
-		// Only retrieve the data that hasn't already been passed to the application.
-		blockData, err := block.data()
-		if err != nil {
-			return nil, err
-		}
-		// We have collected all of the requisite source symbols for the respective block, so we can now drop the block entirely.
-		m.processedBlocks[blockID] = struct{}{}
-		delete(m.blocks, blockID)
-		return blockData, nil
+
+	if bS.block.isComplete() {
+		bS.block = nil
+		bS.isProcessed = true
 	}
-	// Mark this source symbol as already having been passed up to the application, which ensures it'll only be passed once.
-	return block.processSymbol(f)
+	m.blockStatuses[blockID] = bS
+	return f.Payload, nil
 }
 
-// UpdateWindowSize updates the window size, which denotes the maximum number of received source symbols that can be stored at a time.
-func (m *manager) UpdateWindowSize(newWindowSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error {
-	return m.window.update(newWindowSize, epoch)
-}
-
-func (m *manager) SetInitialCodingWindow(ws protocol.FECWindowSize) {
-	m.window.setInitialCodingWindow(ws)
-}
-
-type blockParams struct {
-	// n denotes the total number of symbols, including repair symbols, for the block
-	n int
-	// k denotes the total number of source symbols in the block
-	k int
-	// (n-k) indicates the number of repair symbols within the scheme (e.g. (3, 2) denotes 2 source symbols and (3-2=1) repair symbols for a total of 3 symbols in the block)
-}
-
-type fecWindow struct {
-	size       protocol.FECWindowSize
-	epoch      protocol.FECWindowEpoch
-	hasBeenSet bool
-}
-
-func newFECWindow() *fecWindow {
-	return &fecWindow{
-		size:       0,
-		epoch:      0,
-		hasBeenSet: false,
-	}
-}
-
-func (fw *fecWindow) update(newWindowSize protocol.FECWindowSize, epoch protocol.FECWindowEpoch) error {
-	if epoch == 0 && fw.epoch == 0 && !fw.hasBeenSet {
-		fw.size = newWindowSize
-		fw.hasBeenSet = true
-	} else if epoch > fw.epoch {
-		fw.epoch = epoch
-		fw.size = newWindowSize
-	} else {
-		// TODO (ddritzenhoff) it could be that we should just ignore invalid FEC_WINDOW updates. This is ambiguous within the spec, but it could definitely be something to ask about.
-		return fmt.Errorf("invalid fec window update: newWindowSize %d, newEpoch %d, windowSize: %d, epoch %d", newWindowSize, epoch, fw.size, fw.epoch)
-	}
-	return nil
-}
-
-func (fw *fecWindow) setInitialCodingWindow(ws protocol.FECWindowSize) {
-	fw.size = ws
-}
+// TODO (ddritzenhoff) repair symbols are always created here, which should make it possible to allocate a set of repair symbols using sync.pool and always fetch new ones from there.
