@@ -13,6 +13,7 @@ import (
 	reflect "reflect"
 
 	ackhandler "github.com/quic-go/quic-go/internal/ackhandler"
+	fec "github.com/quic-go/quic-go/internal/fec"
 	protocol "github.com/quic-go/quic-go/internal/protocol"
 	qerr "github.com/quic-go/quic-go/internal/qerr"
 	gomock "go.uber.org/mock/gomock"
@@ -312,6 +313,42 @@ func (c *MockPackerPackMTUProbePacketCall) Do(f func(ackhandler.Frame, protocol.
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockPackerPackMTUProbePacketCall) DoAndReturn(f func(ackhandler.Frame, protocol.ByteCount, protocol.Version) (shortHeaderPacket, *packetBuffer, error)) *MockPackerPackMTUProbePacketCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// SetFECSender mocks base method.
+func (m *MockPacker) SetFECSender(arg0 fec.Sender) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetFECSender", arg0)
+}
+
+// SetFECSender indicates an expected call of SetFECSender.
+func (mr *MockPackerMockRecorder) SetFECSender(arg0 any) *MockPackerSetFECSenderCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetFECSender", reflect.TypeOf((*MockPacker)(nil).SetFECSender), arg0)
+	return &MockPackerSetFECSenderCall{Call: call}
+}
+
+// MockPackerSetFECSenderCall wrap *gomock.Call
+type MockPackerSetFECSenderCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockPackerSetFECSenderCall) Return() *MockPackerSetFECSenderCall {
+	c.Call = c.Call.Return()
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockPackerSetFECSenderCall) Do(f func(fec.Sender)) *MockPackerSetFECSenderCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockPackerSetFECSenderCall) DoAndReturn(f func(fec.Sender)) *MockPackerSetFECSenderCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

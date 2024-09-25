@@ -347,9 +347,11 @@ type Config struct {
 	Allow0RTT bool
 	// Enable QUIC datagram support (RFC 9221).
 	EnableDatagrams bool
-	// Enable FEC support (draft-michel-quic-fec-01).
+	// EnableFEC identifies whether FEC should be enabled.
 	EnableFEC bool
-	Tracer    func(context.Context, logging.Perspective, ConnectionID) *logging.ConnectionTracer
+	// DecoderFECScheme identifies the used FEC Scheme.
+	DecoderFECScheme protocol.DecoderFECScheme
+	Tracer           func(context.Context, logging.Perspective, ConnectionID) *logging.ConnectionTracer
 }
 
 // ClientHelloInfo contains information about an incoming connection attempt.
@@ -372,8 +374,6 @@ type ConnectionState struct {
 	// If datagram support was negotiated, datagrams can be sent and received using the
 	// SendDatagram and ReceiveDatagram methods on the Connection.
 	SupportsDatagrams bool
-	// TODO (ddritzenhoff) Will need to access this field in the `SendFEC()` function (similar to `SendDatagram`).
-	SupportsFEC bool
 	// Used0RTT says if 0-RTT resumption was used.
 	Used0RTT bool
 	// Version is the QUIC version of the QUIC connection.

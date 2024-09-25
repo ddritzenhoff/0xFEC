@@ -47,7 +47,7 @@ type manager struct {
 	blockStatuses       map[protocol.BlockID]blockStatus
 }
 
-func NewSender(id protocol.FECSchemeID) (Sender, error) {
+func NewSender(id protocol.DecoderFECScheme) (Sender, error) {
 	switch id {
 	case protocol.FECDisabled:
 		return nil, nil
@@ -70,7 +70,7 @@ func NewSender(id protocol.FECSchemeID) (Sender, error) {
 	}
 }
 
-func NewReceiver(id protocol.FECSchemeID) (Receiver, error) {
+func NewReceiver(id protocol.DecoderFECScheme) (Receiver, error) {
 	switch id {
 	case protocol.FECDisabled:
 		return nil, nil

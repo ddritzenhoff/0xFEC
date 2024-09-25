@@ -47,11 +47,9 @@ const (
 	retrySourceConnectionIDParameterID         transportParameterID = 0x10
 	// RFC 9221
 	maxDatagramFrameSizeParameterID transportParameterID = 0x20
-
-	// TODO (ddritzenhoff) may have to sync with Michel for fecEnableParameterID.
-	fecEnableParameterID              transportParameterID = 0x238ffece01
-	fecDecoderSchemeParameterID       transportParameterID = 0x238ffecd
-	fecInitialCodingWindowParameterID transportParameterID = 0x238ffecc
+	// FEC
+	fecEnableParameterID        transportParameterID = 0x238ffece01
+	fecDecoderSchemeParameterID transportParameterID = 0x238ffecd
 )
 
 // PreferredAddress is the value encoding in the preferred_address transport parameter
@@ -91,11 +89,9 @@ type TransportParameters struct {
 
 	MaxDatagramFrameSize protocol.ByteCount
 
-	// TODO (ddritzenhoff) Not sure if uint8 is the best option here.
+	// FEC
 	EnableFEC        uint8
-	DecoderFECScheme protocol.FECSchemeID
-	// TODO (ddritzenhoff) not exactly sure what the type should be here.
-	InitialCodingWindow protocol.FECWindowSize
+	DecoderFECScheme protocol.DecoderFECScheme
 }
 
 // Unmarshal the transport parameters
@@ -154,8 +150,7 @@ func (p *TransportParameters) unmarshal(r *bytes.Reader, sentBy protocol.Perspec
 			ackDelayExponentParameterID,
 			// FEC
 			fecEnableParameterID,
-			fecDecoderSchemeParameterID,
-			fecInitialCodingWindowParameterID:
+			fecDecoderSchemeParameterID:
 			if err := p.readNumericTransportParameter(r, paramID, int(paramLen)); err != nil {
 				return err
 			}
@@ -333,9 +328,7 @@ func (p *TransportParameters) readNumericTransportParameter(
 		}
 		p.EnableFEC = uint8(val)
 	case fecDecoderSchemeParameterID:
-		p.DecoderFECScheme = protocol.FECSchemeID(val)
-	case fecInitialCodingWindowParameterID:
-		p.InitialCodingWindow = protocol.FECWindowSize(val)
+		p.DecoderFECScheme = protocol.DecoderFECScheme(val)
 	default:
 		return fmt.Errorf("TransportParameter BUG: transport parameter %d not found", paramID)
 	}
@@ -377,8 +370,6 @@ func (p *TransportParameters) Marshal(pers protocol.Perspective) []byte {
 	b = p.marshalVarintParam(b, fecEnableParameterID, uint64(p.EnableFEC))
 	// decoder_fec_scheme
 	b = p.marshalVarintParam(b, fecDecoderSchemeParameterID, uint64(p.DecoderFECScheme))
-	// initial_coding_window
-	b = p.marshalVarintParam(b, fecInitialCodingWindowParameterID, uint64(p.InitialCodingWindow))
 	// max_ack_delay
 	// Only send it if is different from the default value.
 	if p.MaxAckDelay != protocol.DefaultMaxAckDelay {
@@ -535,8 +526,8 @@ func (p *TransportParameters) String() string {
 		logString += "RetrySourceConnectionID: %s, "
 		logParams = append(logParams, p.RetrySourceConnectionID)
 	}
-	logString += "InitialMaxStreamDataBidiLocal: %d, InitialMaxStreamDataBidiRemote: %d, InitialMaxStreamDataUni: %d, InitialMaxData: %d, MaxBidiStreamNum: %d, MaxUniStreamNum: %d, MaxIdleTimeout: %s, AckDelayExponent: %d, MaxAckDelay: %s, ActiveConnectionIDLimit: %d, EnableFEC: %d, DecoderFECScheme: %s, InitialCodingWindow: %d"
-	logParams = append(logParams, []interface{}{p.InitialMaxStreamDataBidiLocal, p.InitialMaxStreamDataBidiRemote, p.InitialMaxStreamDataUni, p.InitialMaxData, p.MaxBidiStreamNum, p.MaxUniStreamNum, p.MaxIdleTimeout, p.AckDelayExponent, p.MaxAckDelay, p.ActiveConnectionIDLimit, p.EnableFEC, p.DecoderFECScheme.String(), p.InitialCodingWindow}...)
+	logString += "InitialMaxStreamDataBidiLocal: %d, InitialMaxStreamDataBidiRemote: %d, InitialMaxStreamDataUni: %d, InitialMaxData: %d, MaxBidiStreamNum: %d, MaxUniStreamNum: %d, MaxIdleTimeout: %s, AckDelayExponent: %d, MaxAckDelay: %s, ActiveConnectionIDLimit: %d, EnableFEC: %d, DecoderFECScheme: %s"
+	logParams = append(logParams, []interface{}{p.InitialMaxStreamDataBidiLocal, p.InitialMaxStreamDataBidiRemote, p.InitialMaxStreamDataUni, p.InitialMaxData, p.MaxBidiStreamNum, p.MaxUniStreamNum, p.MaxIdleTimeout, p.AckDelayExponent, p.MaxAckDelay, p.ActiveConnectionIDLimit, p.EnableFEC, p.DecoderFECScheme.String()}...)
 	if p.StatelessResetToken != nil { // the client never sends a stateless reset token
 		logString += ", StatelessResetToken: %#x"
 		logParams = append(logParams, *p.StatelessResetToken)

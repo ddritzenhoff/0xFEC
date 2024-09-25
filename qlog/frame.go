@@ -231,9 +231,8 @@ func marshalDatagramFrame(enc *gojay.Encoder, f *logging.DatagramFrame) {
 }
 
 func marshalRepairFrame(enc *gojay.Encoder, f *logging.RepairFrame) {
-	enc.Int64Key("rid_smallest_sid", int64(f.RID.SmallestSID))
-	enc.Int64Key("rid_largest_sid", int64(f.RID.LargestSID))
 	enc.Int64Key("block_id", int64(f.BlockID))
+	enc.Int64Key("parity_id", int64(f.ParityID))
 }
 
 func marshalSourceSymbolFrame(enc *gojay.Encoder, f *logging.SourceSymbolFrame) {

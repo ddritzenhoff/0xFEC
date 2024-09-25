@@ -105,6 +105,8 @@ var _ = Describe("Config", func() {
 				f.Set(reflect.ValueOf(true))
 			case "EnableFEC":
 				f.Set(reflect.ValueOf(true))
+			case "DecoderFECScheme":
+				f.Set(reflect.ValueOf(protocol.XORFECScheme))
 			default:
 				Fail(fmt.Sprintf("all fields must be accounted for, but saw unknown field %q", fn))
 			}

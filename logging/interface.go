@@ -56,9 +56,9 @@ type (
 	// The RTTStats contain statistics used by the congestion controller.
 	RTTStats = utils.RTTStats
 
-	RID     = protocol.RID
-	BlockID = protocol.BlockID
-	SID     = protocol.SID
+	BlockID  = protocol.BlockID
+	ParityID = protocol.ParityID
+	SID      = protocol.SourceSymbolID
 )
 
 const (

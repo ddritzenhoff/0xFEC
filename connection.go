@@ -214,7 +214,7 @@ type connection struct {
 	tracer *logging.ConnectionTracer
 	logger utils.Logger
 
-	fecManager  fec.Manager
+	fecReceiver fec.Receiver
 	repairQueue *repairQueue
 }
 
@@ -277,7 +277,11 @@ var newConnection = func(
 		s.queueControlFrame,
 		connIDGenerator,
 	)
-	s.fecManager = fec.NewFECManager()
+	fecReceiver, err := fec.NewReceiver(s.config.DecoderFECScheme)
+	if err != nil {
+		panic(err.Error())
+	}
+	s.fecReceiver = fecReceiver
 	s.preSetup()
 	s.ctx, s.ctxCancel = context.WithCancelCause(context.WithValue(context.Background(), ConnectionTracingKey, tracingID))
 	s.sentPacketHandler, s.receivedPacketHandler = ackhandler.NewAckHandler(
@@ -323,6 +327,7 @@ var newConnection = func(
 	} else {
 		params.EnableFEC = 0x0
 	}
+	params.DecoderFECScheme = s.config.DecoderFECScheme
 	if s.tracer != nil && s.tracer.SentTransportParameters != nil {
 		s.tracer.SentTransportParameters(params)
 	}
@@ -339,7 +344,7 @@ var newConnection = func(
 		s.version,
 	)
 	s.cryptoStreamHandler = cs
-	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.fecManager, s.repairQueue)
+	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.repairQueue)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
 	s.cryptoStreamManager = newCryptoStreamManager(cs, s.initialStream, s.handshakeStream, s.oneRTTStream)
 	return s
@@ -392,7 +397,11 @@ var newClientConnection = func(
 		s.queueControlFrame,
 		connIDGenerator,
 	)
-	s.fecManager = fec.NewFECManager()
+	fecReceiver, err := fec.NewReceiver(s.config.DecoderFECScheme)
+	if err != nil {
+		panic(err.Error())
+	}
+	s.fecReceiver = fecReceiver
 	s.preSetup()
 	s.ctx, s.ctxCancel = context.WithCancelCause(context.WithValue(context.Background(), ConnectionTracingKey, tracingID))
 	s.sentPacketHandler, s.receivedPacketHandler = ackhandler.NewAckHandler(
@@ -436,6 +445,7 @@ var newClientConnection = func(
 	} else {
 		params.EnableFEC = 0x0
 	}
+	params.DecoderFECScheme = s.config.DecoderFECScheme
 	if s.tracer != nil && s.tracer.SentTransportParameters != nil {
 		s.tracer.SentTransportParameters(params)
 	}
@@ -452,7 +462,7 @@ var newClientConnection = func(
 	s.cryptoStreamHandler = cs
 	s.cryptoStreamManager = newCryptoStreamManager(cs, s.initialStream, s.handshakeStream, oneRTTStream)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
-	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.fecManager, s.repairQueue)
+	s.packer = newPacketPackerWithFEC(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, s.receivedPacketHandler, s.datagramQueue, s.perspective, s.repairQueue)
 	if len(tlsConf.ServerName) > 0 {
 		s.tokenStoreKey = tlsConf.ServerName
 	} else {
@@ -1435,8 +1445,6 @@ func (s *connection) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel
 		err = s.handleHandshakeDoneFrame()
 	case *wire.DatagramFrame:
 		err = s.handleDatagramFrame(frame)
-	case *wire.FECWindowFrame:
-		err = s.handleFECWindowFrame(frame)
 	default:
 		err = fmt.Errorf("unexpected frame type: %s", reflect.ValueOf(&frame).Elem().Type().Name())
 	}
@@ -1641,7 +1649,7 @@ func (s *connection) handleDatagramFrame(f *wire.DatagramFrame) error {
 }
 
 func (s *connection) handleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte, error) {
-	blockData, err := s.fecManager.HandleSourceSymbolFrame(f)
+	blockData, err := s.fecReceiver.HandleSourceSymbolFrame(f)
 	if err != nil {
 		return nil, err
 	}
@@ -1649,15 +1657,11 @@ func (s *connection) handleSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]byte,
 }
 
 func (s *connection) handleRepairFrame(f *wire.RepairFrame) ([]byte, error) {
-	blockData, err := s.fecManager.HandleRepairFrame(f)
+	blockData, err := s.fecReceiver.HandleRepairFrame(f)
 	if err != nil {
 		return nil, err
 	}
 	return blockData, nil
-}
-
-func (s *connection) handleFECWindowFrame(f *wire.FECWindowFrame) error {
-	return s.fecManager.UpdateWindowSize(f.Size, f.Epoch)
 }
 
 // closeLocal closes the connection and send a CONNECTION_CLOSE containing the error
@@ -1811,7 +1815,6 @@ func (s *connection) restoreTransportParameters(params *wire.TransportParameters
 	s.streamsMap.UpdateLimits(params)
 	s.connStateMutex.Lock()
 	s.connState.SupportsDatagrams = s.supportsDatagrams()
-	s.connState.SupportsFEC = s.fecEnabled()
 	s.connStateMutex.Unlock()
 }
 
@@ -1845,7 +1848,6 @@ func (s *connection) handleTransportParameters(params *wire.TransportParameters)
 
 	s.connStateMutex.Lock()
 	s.connState.SupportsDatagrams = s.supportsDatagrams()
-	s.connState.SupportsFEC = s.fecEnabled()
 	s.connStateMutex.Unlock()
 	return nil
 }
@@ -1890,8 +1892,6 @@ func (s *connection) applyTransportParameters() {
 	s.connFlowController.UpdateSendWindow(params.InitialMaxData)
 	s.rttStats.SetMaxAckDelay(params.MaxAckDelay)
 	s.connIDGenerator.SetMaxActiveConnIDs(params.ActiveConnectionIDLimit)
-	// TODO (ddritzenhoff) I'm not sure if I should wrap this in something like if persective.Server.
-	s.fecManager.SetInitialCodingWindow(params.InitialCodingWindow)
 	if params.StatelessResetToken != nil {
 		s.connIDManager.SetStatelessResetToken(*params.StatelessResetToken)
 	}
@@ -1899,6 +1899,13 @@ func (s *connection) applyTransportParameters() {
 	if params.PreferredAddress != nil {
 		// Retire the connection ID.
 		s.connIDManager.AddFromPreferredAddress(params.PreferredAddress.ConnectionID, params.PreferredAddress.StatelessResetToken)
+	}
+	if s.fecEnabled() {
+		fecSender, err := fec.NewSender(params.DecoderFECScheme)
+		if err != nil {
+			panic(err.Error())
+		}
+		s.packer.SetFECSender(fecSender)
 	}
 }
 
@@ -2404,6 +2411,9 @@ func (s *connection) OpenUniStreamSync(ctx context.Context) (SendStream, error) 
 }
 
 func (s *connection) OpenUniStreamSyncWithFEC(ctx context.Context) (SendStream, error) {
+	if !s.fecEnabled() {
+		return nil, errors.New("FEC not enabled")
+	}
 	return s.streamsMap.OpenUniStreamSyncWithFEC(ctx)
 }
 

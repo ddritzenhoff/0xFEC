@@ -67,9 +67,9 @@ type DatagramFrame struct {
 
 // A RepairFrame is a REPAIR frame.
 type RepairFrame struct {
-	RID     RID
-	BlockID BlockID
-	Length  ByteCount
+	BlockID  BlockID
+	ParityID ParityID
+	Length   ByteCount
 }
 
 // A SourceSymbolFrame is a SOURCE_SYMBOL frame.

@@ -111,6 +111,7 @@ func populateConfig(config *Config) *Config {
 		TokenStore:                     config.TokenStore,
 		EnableDatagrams:                config.EnableDatagrams,
 		EnableFEC:                      config.EnableFEC,
+		DecoderFECScheme:               config.DecoderFECScheme,
 		DisablePathMTUDiscovery:        config.DisablePathMTUDiscovery,
 		Allow0RTT:                      config.Allow0RTT,
 		Tracer:                         config.Tracer,

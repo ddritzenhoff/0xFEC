@@ -33,12 +33,13 @@ func ConvertFrame(frame wire.Frame) logging.Frame {
 		}
 	case *wire.RepairFrame:
 		return &logging.RepairFrame{
-			RID:    f.RID,
-			Length: logging.ByteCount(len(f.Data)),
+			BlockID:  f.Metadata.BlockID,
+			ParityID: f.Metadata.ParityID,
+			Length:   logging.ByteCount(len(f.Payload)),
 		}
 	case *wire.SourceSymbolFrame:
 		return &logging.SourceSymbolFrame{
-			SID:    f.SID,
+			SID:    f.SSID,
 			Length: logging.ByteCount(len(f.Payload)),
 		}
 	default:

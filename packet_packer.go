@@ -28,6 +28,7 @@ type packer interface {
 	PackMTUProbePacket(ping ackhandler.Frame, size protocol.ByteCount, v protocol.Version) (shortHeaderPacket, *packetBuffer, error)
 
 	SetToken([]byte)
+	SetFECSender(fec.Sender)
 }
 
 type sealer interface {
@@ -143,7 +144,7 @@ type packetPacker struct {
 
 	numNonAckElicitingAcks int
 
-	fecManager  fec.Manager
+	fecSender   fec.Sender
 	repairQueue *repairQueue
 }
 
@@ -191,7 +192,6 @@ func newPacketPackerWithFEC(
 	acks ackFrameSource,
 	datagramQueue *datagramQueue,
 	perspective protocol.Perspective,
-	fecMananger fec.Manager,
 	repairQueue *repairQueue,
 ) *packetPacker {
 	var b [8]byte
@@ -210,7 +210,6 @@ func newPacketPackerWithFEC(
 		acks:                acks,
 		rand:                *rand.New(rand.NewSource(binary.BigEndian.Uint64(b[:]))),
 		pnManager:           packetNumberManager,
-		fecManager:          fecMananger,
 		repairQueue:         repairQueue,
 	}
 }
@@ -627,7 +626,6 @@ func (p *packetPacker) maybeGetAppDataPacket(maxPayloadSize protocol.ByteCount, 
 	return pl
 }
 
-// TODO (ddritzenhoff) need to make sure you add the logic to actually create the SOURCE_SYMBOL frame somewhere in this file, probably.
 func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAck, ackAllowed bool, v protocol.Version) payload {
 	if onlyAck {
 		if ack := p.acks.GetAckFrame(protocol.Encryption1RTT, true); ack != nil {
@@ -660,13 +658,10 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAc
 				addedRepairFrame = true
 			} else if !hasAck {
 				// this means the repair frame can't fit, which is a serious problem and shouldn't be possible.
-				// TODO (ddritzenhoff) replace panic with something more constructive.
-				panic("no space for repair frame")
+				panic(fmt.Sprintf("no space for repair frame: frame size %d, remaining space %d", size, maxFrameSize-pl.length))
 			}
 		}
 	}
-
-	// TODO (ddritzenhoff) the FEC_WINDOW frame should probably play a role here too.
 
 	if p.datagramQueue != nil {
 		if f := p.datagramQueue.Peek(); f != nil {
@@ -724,13 +719,21 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAc
 			}
 		}
 
-		// TODO (ddritzenhoff) figure out where stream frames get assigned to a handler function.
+		fecEnabled := p.fecSender != nil
+		var streamFrames []ackhandler.StreamFrame
+		if fecEnabled {
+			streamFrames, lengthAdded = p.framer.AppendStreamFrames(pl.streamFrames, maxFrameSize-pl.length-protocol.MaxFECHeaderOverhead, v)
 
-		// XXX (ddritzenhoff) `ssf.MaxHeaderLen()` is needed to account for the size of the source symbol frame header in the event that any FEC streams are enabled. I'm subtracting in every scenario as I don't know if I'll be producing a source symbol frame this round or not. Maybe think of a better way to do this.
-		ssf := wire.SourceSymbolFrame{}
-		streamFrames, lengthAdded := p.framer.AppendStreamFrames(pl.streamFrames, maxFrameSize-pl.length-ssf.MaxHeaderLen(), v)
+		} else {
+			streamFrames, lengthAdded = p.framer.AppendStreamFrames(pl.streamFrames, maxFrameSize-pl.length, v)
+		}
+
 		for _, streamFrame := range streamFrames {
 			if streamFrame.Frame.FECProtected {
+				if !fecEnabled {
+					// this should never happen
+					panic("fec.Sender doesn't exist but there is a FEC protected stream frame")
+				}
 				pl.fecStreamFrames = append(pl.fecStreamFrames, streamFrame)
 			} else {
 				pl.streamFrames = append(pl.streamFrames, streamFrame)
@@ -994,10 +997,12 @@ func (p *packetPacker) appendPacketPayload(raw []byte, pl payload, paddingLen pr
 				return nil, err
 			}
 		}
-
-		ssf := wire.NewSourceSymbolFrame(p.fecManager.NextSID(), payload)
-		sourceSymbolHeaderLen = ssf.HeadLen()
-		repairFrames, err := p.fecManager.AddSourceSymbolFrame(ssf)
+		ssf := &wire.SourceSymbolFrame{
+			SSID:    p.fecSender.NextSID(),
+			Payload: payload,
+		}
+		sourceSymbolHeaderLen = ssf.HeaderLen()
+		repairFrames, err := p.fecSender.AddSourceSymbolFrame(ssf)
 		if err != nil {
 			return nil, err
 		}
@@ -1033,4 +1038,8 @@ func (p *packetPacker) encryptPacket(raw []byte, sealer sealer, pn protocol.Pack
 
 func (p *packetPacker) SetToken(token []byte) {
 	p.token = token
+}
+
+func (p *packetPacker) SetFECSender(s fec.Sender) {
+	p.fecSender = s
 }

@@ -18,15 +18,15 @@ type BlockID uint64
 // ParityID represents the order of parity symbols within the block. This is important to properly reconstruct missing source symbols.
 type ParityID uint64
 
-type FECSchemeID byte
+type DecoderFECScheme byte
 
 const (
-	FECDisabled          FECSchemeID = iota // 0x0
-	XORFECScheme                            // 0x1
-	ReedSolomonFECScheme                    // 0x2
+	FECDisabled          DecoderFECScheme = iota // 0x0
+	XORFECScheme                                 // 0x1
+	ReedSolomonFECScheme                         // 0x2
 )
 
-func (f FECSchemeID) String() string {
+func (f DecoderFECScheme) String() string {
 	switch f {
 	case XORFECScheme:
 		return "XOR"
@@ -34,15 +34,5 @@ func (f FECSchemeID) String() string {
 		return "ReedSolomon"
 	default:
 		return "unknown"
-	}
-}
-
-// IsValid determines whether the provided FEC scheme is supported.
-func (f FECSchemeID) IsValid() bool {
-	switch f {
-	case XORFECScheme, ReedSolomonFECScheme:
-		return true
-	default:
-		return false
 	}
 }
