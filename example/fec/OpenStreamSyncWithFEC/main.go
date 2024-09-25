@@ -13,6 +13,7 @@ import (
 	"math/big"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/internal/protocol"
 )
 
 const addr = "localhost:4242"
@@ -34,7 +35,11 @@ func main() {
 
 // Start a server that echos all data on the first stream opened by the client
 func echoServer(done chan<- struct{}) error {
-	listener, err := quic.ListenAddr(addr, generateTLSConfig(), nil)
+	quicConf := &quic.Config{
+		EnableFEC:        true,
+		DecoderFECScheme: protocol.XORFECScheme,
+	}
+	listener, err := quic.ListenAddr(addr, generateTLSConfig(), quicConf)
 	if err != nil {
 		return err
 	}
@@ -65,11 +70,15 @@ func echoServer(done chan<- struct{}) error {
 }
 
 func clientMain(done <-chan struct{}) error {
+	quicConf := &quic.Config{
+		EnableFEC:        true,
+		DecoderFECScheme: protocol.XORFECScheme,
+	}
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quic-echo-example"},
 	}
-	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, nil)
+	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, quicConf)
 	if err != nil {
 		return err
 	}

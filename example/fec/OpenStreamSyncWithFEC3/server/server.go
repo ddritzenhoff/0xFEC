@@ -14,6 +14,7 @@ import (
 	"math/big"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/internal/protocol"
 )
 
 var (
@@ -39,7 +40,11 @@ func main() {
 
 // Start a server that echos all data on the first stream opened by the client
 func echoServer() error {
-	listener, err := quic.ListenAddr(addr, generateTLSConfig(), nil)
+	quicConfig := &quic.Config{
+		EnableFEC:        true,
+		DecoderFECScheme: protocol.XORFECScheme,
+	}
+	listener, err := quic.ListenAddr(addr, generateTLSConfig(), quicConfig)
 	if err != nil {
 		return err
 	}

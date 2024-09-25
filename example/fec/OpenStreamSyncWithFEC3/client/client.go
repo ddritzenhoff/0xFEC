@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/internal/protocol"
 )
 
 var (
@@ -37,7 +38,11 @@ func clientMain() error {
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quic-fec-example"},
 	}
-	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, nil)
+	quicConf := &quic.Config{
+		EnableFEC:        true,
+		DecoderFECScheme: protocol.XORFECScheme,
+	}
+	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, quicConf)
 	if err != nil {
 		return err
 	}
