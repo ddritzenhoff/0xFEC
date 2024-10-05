@@ -142,6 +142,18 @@ func (m *streamsMap) OpenStreamSync(ctx context.Context) (Stream, error) {
 	return str, convertStreamError(err, protocol.StreamTypeBidi, m.perspective)
 }
 
+func (m *streamsMap) OpenStreamSyncWithFEC(ctx context.Context) (Stream, error) {
+	m.mutex.Lock()
+	reset := m.reset
+	mm := m.outgoingBidiStreams
+	m.mutex.Unlock()
+	if reset {
+		return nil, Err0RTTRejected
+	}
+	str, err := mm.OpenStreamSyncWithFEC(ctx)
+	return str, convertStreamError(err, protocol.StreamTypeBidi, m.perspective)
+}
+
 func (m *streamsMap) OpenUniStream() (SendStream, error) {
 	m.mutex.Lock()
 	reset := m.reset

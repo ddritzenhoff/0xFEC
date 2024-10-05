@@ -146,6 +146,15 @@ type FECConnection interface {
 	// If the payload is too large to be sent at the current time, a DatagramTooLargeError is returned.
 	SendDatagramWithFEC(payload []byte) error
 
+	// OpenStreamSyncWithFEC opens a new bidirectional QUIC stream using FEC.
+	// It blocks until a new stream can be opened.
+	// There is no signaling to the peer about new streams:
+	// The peer can only accept the stream after data has been sent on the stream,
+	// or the stream has been reset or closed.
+	// If the error is non-nil, it satisfies the net.Error interface.
+	// If the connection was closed due to a timeout, Timeout() will be true.
+	OpenStreamSyncWithFEC(context.Context) (Stream, error)
+
 	// OpenUniStreamSyncWithFEC opens a new outgoing unidirectional QUIC stream using FEC.
 	// It blocks until a new stream can be opened.
 	// If the error is non-nil, it satisfies the net.Error interface.

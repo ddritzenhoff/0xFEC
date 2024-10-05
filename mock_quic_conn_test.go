@@ -24,16 +24,6 @@ type MockQUICConn struct {
 	recorder *MockQUICConnMockRecorder
 }
 
-// OpenUniStreamSyncWithFEC implements quicConn.
-func (m *MockQUICConn) OpenUniStreamSyncWithFEC(context.Context) (SendStream, error) {
-	panic("unimplemented")
-}
-
-// SendDatagramWithFEC implements quicConn.
-func (m *MockQUICConn) SendDatagramWithFEC(payload []byte) error {
-	panic("unimplemented")
-}
-
 // MockQUICConnMockRecorder is the mock recorder for MockQUICConn.
 type MockQUICConnMockRecorder struct {
 	mock *MockQUICConn
@@ -435,6 +425,45 @@ func (c *MockQUICConnOpenStreamSyncCall) DoAndReturn(f func(context.Context) (St
 	return c
 }
 
+// OpenStreamSyncWithFEC mocks base method.
+func (m *MockQUICConn) OpenStreamSyncWithFEC(arg0 context.Context) (Stream, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OpenStreamSyncWithFEC", arg0)
+	ret0, _ := ret[0].(Stream)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// OpenStreamSyncWithFEC indicates an expected call of OpenStreamSyncWithFEC.
+func (mr *MockQUICConnMockRecorder) OpenStreamSyncWithFEC(arg0 any) *MockQUICConnOpenStreamSyncWithFECCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenStreamSyncWithFEC", reflect.TypeOf((*MockQUICConn)(nil).OpenStreamSyncWithFEC), arg0)
+	return &MockQUICConnOpenStreamSyncWithFECCall{Call: call}
+}
+
+// MockQUICConnOpenStreamSyncWithFECCall wrap *gomock.Call
+type MockQUICConnOpenStreamSyncWithFECCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockQUICConnOpenStreamSyncWithFECCall) Return(arg0 Stream, arg1 error) *MockQUICConnOpenStreamSyncWithFECCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockQUICConnOpenStreamSyncWithFECCall) Do(f func(context.Context) (Stream, error)) *MockQUICConnOpenStreamSyncWithFECCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockQUICConnOpenStreamSyncWithFECCall) DoAndReturn(f func(context.Context) (Stream, error)) *MockQUICConnOpenStreamSyncWithFECCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // OpenUniStream mocks base method.
 func (m *MockQUICConn) OpenUniStream() (SendStream, error) {
 	m.ctrl.T.Helper()
@@ -509,6 +538,45 @@ func (c *MockQUICConnOpenUniStreamSyncCall) Do(f func(context.Context) (SendStre
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockQUICConnOpenUniStreamSyncCall) DoAndReturn(f func(context.Context) (SendStream, error)) *MockQUICConnOpenUniStreamSyncCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// OpenUniStreamSyncWithFEC mocks base method.
+func (m *MockQUICConn) OpenUniStreamSyncWithFEC(arg0 context.Context) (SendStream, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OpenUniStreamSyncWithFEC", arg0)
+	ret0, _ := ret[0].(SendStream)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// OpenUniStreamSyncWithFEC indicates an expected call of OpenUniStreamSyncWithFEC.
+func (mr *MockQUICConnMockRecorder) OpenUniStreamSyncWithFEC(arg0 any) *MockQUICConnOpenUniStreamSyncWithFECCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenUniStreamSyncWithFEC", reflect.TypeOf((*MockQUICConn)(nil).OpenUniStreamSyncWithFEC), arg0)
+	return &MockQUICConnOpenUniStreamSyncWithFECCall{Call: call}
+}
+
+// MockQUICConnOpenUniStreamSyncWithFECCall wrap *gomock.Call
+type MockQUICConnOpenUniStreamSyncWithFECCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockQUICConnOpenUniStreamSyncWithFECCall) Return(arg0 SendStream, arg1 error) *MockQUICConnOpenUniStreamSyncWithFECCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockQUICConnOpenUniStreamSyncWithFECCall) Do(f func(context.Context) (SendStream, error)) *MockQUICConnOpenUniStreamSyncWithFECCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockQUICConnOpenUniStreamSyncWithFECCall) DoAndReturn(f func(context.Context) (SendStream, error)) *MockQUICConnOpenUniStreamSyncWithFECCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -624,6 +692,44 @@ func (c *MockQUICConnSendDatagramCall) Do(f func([]byte) error) *MockQUICConnSen
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockQUICConnSendDatagramCall) DoAndReturn(f func([]byte) error) *MockQUICConnSendDatagramCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// SendDatagramWithFEC mocks base method.
+func (m *MockQUICConn) SendDatagramWithFEC(arg0 []byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendDatagramWithFEC", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendDatagramWithFEC indicates an expected call of SendDatagramWithFEC.
+func (mr *MockQUICConnMockRecorder) SendDatagramWithFEC(arg0 any) *MockQUICConnSendDatagramWithFECCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendDatagramWithFEC", reflect.TypeOf((*MockQUICConn)(nil).SendDatagramWithFEC), arg0)
+	return &MockQUICConnSendDatagramWithFECCall{Call: call}
+}
+
+// MockQUICConnSendDatagramWithFECCall wrap *gomock.Call
+type MockQUICConnSendDatagramWithFECCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockQUICConnSendDatagramWithFECCall) Return(arg0 error) *MockQUICConnSendDatagramWithFECCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockQUICConnSendDatagramWithFECCall) Do(f func([]byte) error) *MockQUICConnSendDatagramWithFECCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockQUICConnSendDatagramWithFECCall) DoAndReturn(f func([]byte) error) *MockQUICConnSendDatagramWithFECCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

@@ -321,9 +321,18 @@ func (c *client) roundTripOpt(req *http.Request, opt RoundTripOpt) (*http.Respon
 		}
 	}
 
-	str, err := conn.OpenStreamSync(req.Context())
-	if err != nil {
-		return nil, err
+	var str quic.Stream
+	var err error
+	if c.config.EnableFEC {
+		str, err = conn.OpenStreamSyncWithFEC(req.Context())
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		str, err = conn.OpenStreamSync(req.Context())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Request Cancellation:

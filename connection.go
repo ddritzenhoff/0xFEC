@@ -41,6 +41,7 @@ type streamManager interface {
 	OpenStream() (Stream, error)
 	OpenUniStream() (SendStream, error)
 	OpenStreamSync(context.Context) (Stream, error)
+	OpenStreamSyncWithFEC(context.Context) (Stream, error)
 	OpenUniStreamSync(context.Context) (SendStream, error)
 	OpenUniStreamSyncWithFEC(context.Context) (SendStream, error)
 	AcceptStream(context.Context) (Stream, error)
@@ -2400,6 +2401,10 @@ func (s *connection) OpenStream() (Stream, error) {
 
 func (s *connection) OpenStreamSync(ctx context.Context) (Stream, error) {
 	return s.streamsMap.OpenStreamSync(ctx)
+}
+
+func (s *connection) OpenStreamSyncWithFEC(ctx context.Context) (Stream, error) {
+	return s.streamsMap.OpenStreamSyncWithFEC(ctx)
 }
 
 func (s *connection) OpenUniStream() (SendStream, error) {
