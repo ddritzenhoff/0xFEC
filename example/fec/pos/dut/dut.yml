@@ -1,0 +1,8 @@
+client:
+  interface: enp2s0f0
+server:
+  interface: enp2s0f1
+rounds: 9
+endpoint: 1MB
+client-ip: 10.0.0.1/24
+server-ip: 10.0.0.2/24

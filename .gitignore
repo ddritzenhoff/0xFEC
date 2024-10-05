@@ -15,3 +15,7 @@ fuzzing/*/suppressions
 fuzzing/*/corpus/
 
 gomock_reflect_*/
+
+example/fec/pos/dut/client/output.txt
+example/fec/pos/dut/client/client-linux-x86_64
+example/fec/pos/dut/server/server-linux-x86_64
