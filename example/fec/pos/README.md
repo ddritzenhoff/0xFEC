@@ -1,5 +1,7 @@
 # FEC Notes
 
+This experiment uses two virtual ethernet interfaces in separate network namespaces.
+
 According to Francois Michel's thesis, he found a set of parameters for Direct Air-to-Ground communication (DA2GC) and Mobile Satellite Services (MSS). These are both in-flight communication technologies.
 
 Bandwidth: [0.3, 10] Mbps
