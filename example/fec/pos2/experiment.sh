@@ -46,8 +46,8 @@ scp "./server/1MB" root@"$SERVER":/tmp/
 echo "setup hosts"
 # Queue up the commands. They will be executed once booting is done.
 # Capture the returned command ID of one command to wait for it finish.
-CLIENT_SETUP_CMD_ID=$(pos commands launch --infile "./client/setup.sh" --queued --name client_setup)
-pos commands launch --infile "./server/setup.sh" --queued --name server_setup
+pos commands launch --infile "./server/setup.sh" "$SERVER" --queued --name server_setup
+CLIENT_SETUP_CMD_ID=$(pos commands launch --infile "./client/setup.sh" "$CLIENT" --queued --name client_setup)
 
 echo "waiting for setup to finish"
 pos commands await $CLIENT_SETUP_CMD_ID

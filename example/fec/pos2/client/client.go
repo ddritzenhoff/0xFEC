@@ -23,7 +23,7 @@ const (
 	SHA256File1MB  string = "e82575190829096bf2061d311b272050e3af82851da270ba3d3f7b92e48efdf7"
 )
 
-// go run client.go -round=1 -file=output.txt -host=localhost -endpoint=1kB
+// go run client.go -round=1 -file=output.txt -host=22.22.22.22 -endpoint=1kB
 // GOARCH=amd64 GOOS=linux go build -o client-linux-x86_64
 
 func main() {
@@ -82,15 +82,12 @@ func main() {
 	}
 	defer rsp.Body.Close()
 
-	// stop timer
-	duration := time.Since(start)
-
 	if isPing {
 		buf, err := io.ReadAll(rsp.Body)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("%s: %s\n", string(buf), duration.String())
+		fmt.Printf("%s\n", string(buf))
 		return
 	}
 
@@ -103,6 +100,9 @@ func main() {
 	if digest != expectedDigest {
 		log.Fatal("received digest not equal to expected digest")
 	}
+
+	// stop timer
+	duration := time.Since(start)
 
 	f, err := os.OpenFile(*outputFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
