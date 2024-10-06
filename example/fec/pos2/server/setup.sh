@@ -4,5 +4,4 @@ ip route add 11.11.11.0/24 dev enp2s0f0
 
 tc qdisc add dev enp2s0f0 root netem delay 100ms loss 1% rate 1mbit
 
-pos_sync
 ./server-linux-x86_64
