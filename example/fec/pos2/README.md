@@ -2,21 +2,13 @@
 
 This experiment uses two machines and two phyiscal interfaces.
 
-The destination network address --> this will be the IP I assign to tartu and tallinn
-Name of the local interface connected to the destination network.
+According to Francois Michel's thesis, he found a set of parameters for Direct Air-to-Ground communication (DA2GC) and Mobile Satellite Services (MSS). These are both in-flight communication technologies.
 
-Assign an IP address to a physical address
-Add a route for the interface
-Bring the interface up
+Bandwidth: [0.3, 10] Mbps
+OWD: [100, 400] Mbs
 
-Client:
-`ip addr add 11.11.11.11/32 dev enp2s0f0`
-`ip link set dev enp2s0f0 up`
-`ip route add 22.22.22.0/24 dev enp2s0f0`
+Loss:
+lowest: p=.01, r=.08, k=.98, h=0
+highest: p=.08, r=.5, k=1, h=.1
 
-Server:
-`ip addr add 22.22.22.22/32 dev enp2s0f0`
-`ip link set dev enp2s0f0 up`
-`ip route add 11.11.11.0/24 dev enp2s0f0`
-
-There are two interfaces provided on both Tallinn and Tartu, but I'm only using one of them as its full duplex.
+These values are necessary to establish a Gilbert-Elliot loss model. 'p' represents the probability of going from a good state to a bad state. 'r' represents the probability of going from a bad state to a good state. 'k' represents the probability of staying in a good state. 'h' represents the probability of staying in the bad state.

@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/csv"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/quic-go/quic-go/internal/protocol"
 )
 
 const (
@@ -23,19 +25,18 @@ const (
 	SHA256File1MB  string = "e82575190829096bf2061d311b272050e3af82851da270ba3d3f7b92e48efdf7"
 )
 
-// go run client.go -round=1 -file=output.txt -host=22.22.22.22 -endpoint=1kB
+// go run client.go -round=1 -host=22.22.22.22 -endpoint=1kB -scheme=1
 // GOARCH=amd64 GOOS=linux go build -o client-linux-x86_64
 
 func main() {
 	round := flag.String("round", "", "the round at which this binary is being invoked.")
-	outputFile := flag.String("file", "", "file to write the download completion time")
 	host := flag.String("host", "", "the host to query")
 	endpoint := flag.String("endpoint", "", "endpoint to query")
-
+	scheme := flag.Int("scheme", 0, "0x0=>no FEC, 0x1=>XOR, 0x2=>Reed-Solomon")
 	flag.Parse()
 
-	if *round == "" || *outputFile == "" || *host == "" || *endpoint == "" {
-		log.Fatalf("not all flags are set. Round: %s, Output file: %s, Host: %s, Endpoint: %s", *round, *outputFile, *host, *endpoint)
+	if *round == "" || *host == "" || *endpoint == "" {
+		log.Fatalf("not all flags are set. Round: %s, Host: %s, Endpoint: %s", *round, *host, *endpoint)
 	}
 
 	isPing := false
@@ -61,12 +62,24 @@ func main() {
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
-		QuicConfig: &quic.Config{
-			// Tracer:           qlog.DefaultTracer,
-			// EnableFEC:        true,
-			// DecoderFECScheme: protocol.XORFECScheme,
-		},
 	}
+
+	if *scheme == 0x1 {
+		// XOR
+		roundTripper.QuicConfig = &quic.Config{
+			// Tracer:           qlog.DefaultTracer,
+			EnableFEC:        true,
+			DecoderFECScheme: protocol.XORFECScheme,
+		}
+	} else if *scheme == 0x2 {
+		// Reed-Solomon
+		roundTripper.QuicConfig = &quic.Config{
+			// Tracer:           qlog.DefaultTracer,
+			EnableFEC:        true,
+			DecoderFECScheme: protocol.ReedSolomonFECScheme,
+		}
+	}
+
 	defer roundTripper.Close()
 	hclient := &http.Client{
 		Transport: roundTripper,
@@ -104,15 +117,38 @@ func main() {
 	// stop timer
 	duration := time.Since(start)
 
-	f, err := os.OpenFile(*outputFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	f, err := os.OpenFile("test_results.csv", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		log.Fatalf("could not open file: %v\n", err)
 	}
 	defer f.Close()
+	writer := csv.NewWriter(f)
+	defer writer.Flush()
 
-	res := fmt.Sprintf("round %s DCT for %s: %s\n", *round, *endpoint, duration.String())
-	if _, err := f.WriteString(res); err != nil {
-		log.Fatalf("could not write to file: %v\n", err)
+	fileInfo, err := f.Stat()
+	if err != nil {
+		log.Fatalf("failed to get file info: %s", err)
 	}
-	fmt.Print(res)
+
+	if fileInfo.Size() == 0 {
+		headers := []string{"Scheme", "FileSize", "Round", "Duration"}
+		if err := writer.Write(headers); err != nil {
+			log.Fatalf("failed to write headers: %s", err)
+		}
+	}
+
+	// FEC,1MB,2,3.45283s
+	// NONE,1MB,3,2.4552s
+	fecStr := "NONE"
+	if *scheme == 0x1 {
+		fecStr = "XOR"
+	} else if *scheme == 0x2 {
+		fecStr = "RS"
+	}
+	result := []string{
+		fecStr, *endpoint, *round, duration.String(),
+	}
+	if err := writer.Write(result); err != nil {
+		log.Fatalf("failed to write result: %s", err)
+	}
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/quic-go/quic-go/internal/protocol"
 )
 
 func setupHandler() http.Handler {
@@ -47,6 +48,7 @@ func setupHandler() http.Handler {
 
 func main() {
 	fileDigests := flag.Bool("file-digests", false, "Does not start the server. Prints out the file digests")
+	scheme := flag.Int("scheme", 0, "0x0=>no FEC, 0x1=>XOR, 0x2=>Reed-Solomon")
 	flag.Parse()
 
 	if *fileDigests {
@@ -60,12 +62,24 @@ func main() {
 		TLSConfig: http3.ConfigureTLSConfig(&tls.Config{
 			Certificates: generateTLSCertificates(),
 		}),
-		QuicConfig: &quic.Config{
-			// Tracer:           qlog.DefaultTracer,
-			// EnableFEC:        true,
-			// DecoderFECScheme: protocol.XORFECScheme,
-		},
 	}
+
+	if *scheme == 0x1 {
+		// XOR
+		server.QuicConfig = &quic.Config{
+			// Tracer:           qlog.DefaultTracer,
+			EnableFEC:        true,
+			DecoderFECScheme: protocol.XORFECScheme,
+		}
+	} else if *scheme == 0x2 {
+		// Reed-Solomon
+		server.QuicConfig = &quic.Config{
+			// Tracer:           qlog.DefaultTracer,
+			EnableFEC:        true,
+			DecoderFECScheme: protocol.ReedSolomonFECScheme,
+		}
+	}
+
 	err := server.ListenAndServe()
 	if err != nil {
 		log.Fatal(err)
