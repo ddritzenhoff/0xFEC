@@ -126,6 +126,7 @@ func (q *retransmissionQueue) GetAppDataFrame(maxLen protocol.ByteCount, v proto
 	}
 	f := q.appData[0]
 	if f.Length(v) > maxLen {
+		// TODO: I'm a little worried repair frames will basically cause this to happen again and again.
 		return nil
 	}
 	q.appData = q.appData[1:]
@@ -172,6 +173,7 @@ func (q *retransmissionQueueHandshakeAckHandler) OnLost(f wire.Frame) {
 	(*retransmissionQueue)(q).addHandshake(f)
 }
 
+// TODO could be that I add my own handler for repair frames here.
 type retransmissionQueueAppDataAckHandler retransmissionQueue
 
 func (q *retransmissionQueueAppDataAckHandler) OnAcked(wire.Frame) {}

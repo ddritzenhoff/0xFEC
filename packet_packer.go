@@ -732,7 +732,7 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, onlyAc
 			if streamFrame.Frame.FECProtected {
 				if !fecEnabled {
 					// this should never happen
-					panic("fec.Sender doesn't exist but there is a FEC protected stream frame")
+					panic(fmt.Sprintf("fec.Sender doesn't exist but there is a FEC protected stream frame: perspective %s", p.perspective.String()))
 				}
 				pl.fecStreamFrames = append(pl.fecStreamFrames, streamFrame)
 			} else {
@@ -998,7 +998,7 @@ func (p *packetPacker) appendPacketPayload(raw []byte, pl payload, paddingLen pr
 			}
 		}
 		ssf := &wire.SourceSymbolFrame{
-			SSID:    p.fecSender.NextSID(),
+			SSID:    p.fecSender.NextSSID(),
 			Payload: payload,
 		}
 		sourceSymbolHeaderLen = ssf.HeaderLen()

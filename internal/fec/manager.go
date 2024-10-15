@@ -12,7 +12,7 @@ import (
 // Sender represents sender-side functions.
 type Sender interface {
 	AddSourceSymbolFrame(f *wire.SourceSymbolFrame) ([]*wire.RepairFrame, error)
-	NextSID() protocol.SourceSymbolID
+	NextSSID() protocol.SourceSymbolID
 }
 
 // Receiver represents receiver-side functions.
@@ -108,7 +108,7 @@ func NewManager(scheme BlockFECScheme, numTotSourceSymbols int, numTotRepairSymb
 	}, nil
 }
 
-func (m *manager) NextSID() protocol.SourceSymbolID {
+func (m *manager) NextSSID() protocol.SourceSymbolID {
 	m.nextSIDMutex.Lock()
 	ret := m.nextSID
 	m.nextSID++
