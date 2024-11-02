@@ -28,8 +28,14 @@ func setupHandler() http.Handler {
 	mux.HandleFunc("/1kB", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "/tmp/1kB")
 	})
+	mux.HandleFunc("/10kB", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "/tmp/10kB")
+	})
 	mux.HandleFunc("/16kB", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "/tmp/16kB")
+	})
+	mux.HandleFunc("/50kB", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "/tmp/50kB")
 	})
 	mux.HandleFunc("/65kB", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "/tmp/65kB")
@@ -87,7 +93,7 @@ func main() {
 }
 
 func printFileDigests() {
-	fileNames := []string{"1kB", "16kB", "65kB", "1MB"}
+	fileNames := []string{"1kB", "10kB", "16kB", "50kB", "65kB", "1MB"}
 	for _, fileName := range fileNames {
 		path := "./" + fileName
 		file, err := os.Open(fileName)

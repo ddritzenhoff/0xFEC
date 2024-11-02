@@ -20,7 +20,9 @@ import (
 
 const (
 	SHA256File1kB  string = "9c93dbbf2e2f599b4369582b0b41e809e341dc608a2b49b547556f494f426840"
+	SHA256File10kB string = "43941e7de332a8e2038d07be0c759f06239f94f79bb8d94ce673a6b9b460a7e5"
 	SHA256File16kB string = "a64334619694d7e947cd25730edd24aeab1ba25c5cb9855241796857c5d0fff1"
+	SHA256File50kB string = "46519b5112edddc440737b9202459a62008aba5ef095ef25eaa64f5594dbd5b6"
 	SHA256File65kB string = "437bb48b8a27e44b9bbc38d7176f447d72ef8cd691f1ae6cd9ab797a921e65e2"
 	SHA256File1MB  string = "e82575190829096bf2061d311b272050e3af82851da270ba3d3f7b92e48efdf7"
 )
@@ -44,8 +46,12 @@ func main() {
 	switch *endpoint {
 	case "1kB":
 		expectedDigest = SHA256File1kB
+	case "10kB":
+		expectedDigest = SHA256File10kB
 	case "16kB":
 		expectedDigest = SHA256File16kB
+	case "50kB":
+		expectedDigest = SHA256File50kB
 	case "65kB":
 		expectedDigest = SHA256File65kB
 	case "1MB":
