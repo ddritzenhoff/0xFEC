@@ -22,7 +22,5 @@ example/fec/pos/dut/server/server-linux-x86_64
 
 example/fec/pos2/client/client-linux-x86_64
 example/fec/pos2/server/server-linux-x86_64
-example/fec/pos2/server/1kB
 example/fec/pos2/server/16kB
 example/fec/pos2/server/65kB
-example/fec/pos2/server/1MB
