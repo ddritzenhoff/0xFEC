@@ -43,6 +43,15 @@ func setupHandler() http.Handler {
 	mux.HandleFunc("/1MB", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "/tmp/1MB")
 	})
+	mux.HandleFunc("/10MB", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "/tmp/10MB")
+	})
+	mux.HandleFunc("/20MB", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "/tmp/20MB")
+	})
+	mux.HandleFunc("/30MB", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "/tmp/30MB")
+	})
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("pong"))
 	})

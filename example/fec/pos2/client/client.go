@@ -25,6 +25,9 @@ const (
 	SHA256File50kB string = "46519b5112edddc440737b9202459a62008aba5ef095ef25eaa64f5594dbd5b6"
 	SHA256File65kB string = "437bb48b8a27e44b9bbc38d7176f447d72ef8cd691f1ae6cd9ab797a921e65e2"
 	SHA256File1MB  string = "e82575190829096bf2061d311b272050e3af82851da270ba3d3f7b92e48efdf7"
+	SHA256File10MB string = "ce1a0dbb661540d3ebe25f5c4345febf669717e98f1c7790dc003c2843be1582"
+	SHA256File20MB string = "abdb1cdd86165c4a728e26ed7ee0d39f1af1b95cf440aa3b4a3779c819df381d"
+	SHA256File30MB string = "79783d009a99aa23be689b57de3a31c93bccd3db67f8bf78e1539dee9e42d6e4"
 )
 
 // go run client.go -round=1 -host=22.22.22.22 -endpoint=1kB -scheme=1
@@ -56,6 +59,12 @@ func main() {
 		expectedDigest = SHA256File65kB
 	case "1MB":
 		expectedDigest = SHA256File1MB
+	case "10MB":
+		expectedDigest = SHA256File10MB
+	case "20MB":
+		expectedDigest = SHA256File20MB
+	case "30MB":
+		expectedDigest = SHA256File30MB
 	case "ping":
 		isPing = true
 	default:

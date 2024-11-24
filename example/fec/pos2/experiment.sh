@@ -39,9 +39,12 @@ echo "copy over files"
 scp "$DIR/client/client-linux-x86_64" root@"$CLIENT":~
 scp "$DIR/server/server-linux-x86_64" root@"$SERVER":~
 scp "$DIR/server/1kB" root@"$SERVER":/tmp/
-scp "$DIR/server/16kB" root@"$SERVER":/tmp/
-scp "$DIR/server/65kB" root@"$SERVER":/tmp/
+scp "$DIR/server/10kB" root@"$SERVER":/tmp/
+scp "$DIR/server/50kB" root@"$SERVER":/tmp/
 scp "$DIR/server/1MB" root@"$SERVER":/tmp/
+scp "$DIR/server/10MB" root@"$SERVER":/tmp/
+scp "$DIR/server/20MB" root@"$SERVER":/tmp/
+scp "$DIR/server/30MB" root@"$SERVER":/tmp/
 
 echo "setup hosts"
 # Queue up the commands. They will be executed once booting is done.

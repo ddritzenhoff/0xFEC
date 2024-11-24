@@ -1,6 +1,9 @@
-endpoint: 1MB
+endpoint: 20MB
 rounds: 25
 # 0x0 ==> none, 0x1 ==> XOR, 0x2 ==> Reed-Solomon
-scheme: 1
-# "GE" ==> Gilbert-Elliot loss model, <anything else> ==> 5%
-condition: "GE"
+scheme: 0
+# "GE" ==> Gilbert-Elliot loss model, ".01" ==> .01%, ".1" ==> .1%, "1" ==> 1%
+condition: ".1"
+# enp2s0f0 ==> tallinn and tartu
+# enp8s0f0 ==> elva, ens3f1 ==> valga
+interface: "enp2s0f0"
