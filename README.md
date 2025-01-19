@@ -1,5 +1,19 @@
 # A QUIC implementation in pure Go
 
+QUIC [1] is a new general-purpose transport protocol, first standardized by the Internet Engineering Task Force (IETF) in 2021, which combines features from mature protocols such as TCP [2], UDP [3], and TLS [4]. QUIC differentiates itself by offering secure connections by default, promises fewer round trips before data is transmitted, fixes the head-of-line blocking present with TCP, and is made to support a broad array of
+transport services. Hypertext Transfer Protocol Version 3.0 (HTTP/3) [5], which is the newest version of the Hypertext Transfer Protocol (HTTP) and is the most popular application-level protocol built upon QUIC, is now used by 8.2% of all websites [6]. As QUIC increases in usage, it is critical to find ways in order to improve its performance amongst different classes of applications. IFC services, which see use within the context of airplane Wi-Fi by means of satellite or base station connectivity, offer a unique value proposition for QUIC due to their steady growth [7], high-delays, and lossy nature [8]. A consequence of such a network is many retransmissions, which is the default loss-recovery mechanism of QUIC and includes the downside of a degraded user experience. However, by taking advantage of QUIC’s extensibility, it is possible to introduce new types of loss recovery mechanisms, which may better suit such networks. FEC is one such mechanism, which trades bandwidth for redundancy in the attempt to reduce the
+need for retransmissions, thereby increasing the quality of the connection. In this project, we investigate the performance of FEC relative to the pre-existing retransmission-only based loss recovery mechanism by extending the quic-go repository [9] and running simulated network tests with conditions that mimic IFC networks.
+
+[1]: https://www.rfc-editor.org/info/rfc9000
+[2]: https://www.rfc-editor.org/info/rfc791
+[3]: https://www.rfc-editor.org/info/rfc768
+[4]: https://www.rfc-editor.org/info/rfc8446
+[5]: https://www.rfc-editor.org/info/rfc9114
+[6]: https://w3techs.com/technologies/details/ce-quic
+[7]: https://www.globenewswire.com/news-release/2024/09/03/2939792/28124/en/In-Flight-Wi-Fi-Strategic-Business-Report-2023-2030-Airlines-Connectivity-and-Content-Provider-Collaborations-Take-the-Market-to-New-Heights.html
+[8]: https://doi.org/10.1145/3178876.3186057
+[9]: https://github.com/quic-go/quic-go
+
 <img src="docs/quic.png" width=303 height=124>
 
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/quic-go/quic-go)](https://pkg.go.dev/github.com/quic-go/quic-go)
