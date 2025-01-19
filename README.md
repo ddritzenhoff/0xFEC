@@ -1,5 +1,7 @@
 # Implementing Forward Erasure Correction into quic-go
 
+I undertook the project of interpreting and implementing the IETF draft QUIC-FEC[^12] in April 2024 to fulfill a graduation requirement with three gracious PhD students acting as my advisors. I subsequently labored on it for the next 5 months in parallel to other classes and obligations. It was an arduous process to read RFC 9000 and source dive quic-go to find the places where I needed to make the necessary changes. The descriptions within the draft were also high-level, which meant I was making all the design decisions with respect to data structures and new interfaces. The following text contains slightly-modified passages from the report I wrote after finishing my edits and running throughput tests in case you'd like a bit more context with respect to what I actually did. Also, the TLDR of my results is that adding forward erasure correction is feasible, but it's extremely difficult to do and really only thrives in high loss and latency networks. This is not the norm, which means this technology is unnecessary in most cases. Thanks for reading :)
+
 QUIC[^1] is a new general-purpose transport protocol, first standardized by the Internet Engineering Task Force (IETF) in 2021, which combines features from mature protocols such as TCP[^2], UDP[^3], and TLS[^4]. QUIC differentiates itself by offering secure connections by default, promises fewer round trips before data is transmitted, fixes the head-of-line blocking present with TCP, and is made to support a broad array of
 transport services. Hypertext Transfer Protocol Version 3.0 (HTTP/3)[^5], which is the newest version of the Hypertext Transfer Protocol (HTTP) and is the most popular application-level protocol built upon QUIC, is now used by 8.2% of all websites[^6]. As QUIC increases in usage, it is critical to find ways in order to improve its performance amongst different classes of applications. IFC services, which see use within the context of airplane Wi-Fi by means of satellite or base station connectivity, offer a unique value proposition for QUIC due to their steady growth[^7], high-delays, and lossy nature[^8]. A consequence of such a network is many retransmissions, which is the default loss-recovery mechanism of QUIC and includes the downside of a degraded user experience. However, by taking advantage of QUIC’s extensibility, it is possible to introduce new types of loss recovery mechanisms, which may better suit such networks. FEC is one such mechanism, which trades bandwidth for redundancy in the attempt to reduce the
 need for retransmissions, thereby increasing the quality of the connection. In this project, we investigate the performance of FEC relative to the pre-existing retransmission-only based loss recovery mechanism by extending the quic-go repository[^9] and running simulated network tests with conditions that mimic IFC networks.
@@ -25,6 +27,7 @@ For our experiments, we used a client-server file-download scenario. On each int
 [^9]: [quic-go GitHub Repository](https://github.com/quic-go/quic-go)
 [^10]: [Starlink measurements](http://dx.doi.org/10.1145/3589334.3645328)
 [^11]: [RFC 9002](https://www.rfc-editor.org/info/rfc9002)
+[^12]: [QUIC-FEC](https://datatracker.ietf.org/doc/draft-michel-quic-fec/)
 
 ## Using QUIC
 
@@ -150,13 +153,3 @@ http.Client{
   Transport: &http3.RoundTripper{},
 }
 ```
-
-## Supported RFCs
-
-quic-go is an implementation of the QUIC protocol ([RFC 9000](https://datatracker.ietf.org/doc/html/rfc9000), [RFC 9001](https://datatracker.ietf.org/doc/html/rfc9001), [RFC 9002](https://datatracker.ietf.org/doc/html/rfc9002)) in Go. It has support for HTTP/3 ([RFC 9114](https://datatracker.ietf.org/doc/html/rfc9114)), including QPACK ([RFC 9204](https://datatracker.ietf.org/doc/html/rfc9204)).
-
-In addition to these base RFCs, it also implements the following RFCs: 
-* Unreliable Datagram Extension ([RFC 9221](https://datatracker.ietf.org/doc/html/rfc9221))
-* Datagram Packetization Layer Path MTU Discovery (DPLPMTUD, [RFC 8899](https://datatracker.ietf.org/doc/html/rfc8899))
-* QUIC Version 2 ([RFC 9369](https://datatracker.ietf.org/doc/html/rfc9369))
-* QUIC Event Logging using qlog ([draft-ietf-quic-qlog-main-schema](https://datatracker.ietf.org/doc/draft-ietf-quic-qlog-main-schema/) and [draft-ietf-quic-qlog-quic-events](https://datatracker.ietf.org/doc/draft-ietf-quic-qlog-quic-events/))
